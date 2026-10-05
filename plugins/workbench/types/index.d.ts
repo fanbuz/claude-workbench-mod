@@ -83,6 +83,8 @@ declare module 'claude-code' {
       history: TurnRecord[]
       expandedTurn: string | null
       confirmCompact: boolean
+      legendOpen: boolean
+      narrationExpanded: boolean
     }
   }
 }

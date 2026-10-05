@@ -15,14 +15,14 @@ The idea comes from [Wangnov/shnote](https://github.com/Wangnov/shnote), which m
 ```
 Reading the README to learn what the project does          ● ● ○
 ────────────────────────────────────────────────────────
-Step 5   Time 1m03s   3 files changed ›   ▸ Bash · ls -la     [ ▤ Workbench ] [ ⚙ ]
-↑ 4   ↓ 2.3k   ≡↑ 688k   ≡↓ 2.3k   ❝ 1.3k  │  ◎ 99%   $ 0.127   ▤ ▰▰▰▱▱▱▱▱▱▱ 26%
+Step 5   Time 1m03s   3 files changed ›   ▸ Bash · ls -la     [ ▤ Workbench ] [ ⚙ Settings ]
+↑ 4   ↓ 2.3k   ≡↑ 688k   ≡↓ 2.3k   ❝ 1.3k  │  ◎ 99%   $ 0.127   ▤ ▰▰▰▱▱▱▱▱▱▱ 26%   ⓘ
 ```
 
 - **Narration**: Haiku turns your request, the latest tool calls and what the model is thinking or writing into one short sentence about what Claude is doing and why. When the turn ends it becomes a one-line summary. The dots on the right mean Claude is working; they become ✓ when it is done.
 - **Progress**: steps, elapsed time, failures, changed files and the current tool. "N failed" and "N files changed" jump to their tab.
-- **Entry buttons**: **▤ Workbench** opens the workbench pane on the last tab you used; **⚙** opens the settings pane. Both sit at the right end of the progress row.
-- **Tokens**: input, output, cache read, cache write and the narrator's own usage, plus cache hit rate, the cost of this turn and context usage. Small SVG icons on Desktop, Unicode symbols in the terminal; the input and output icons light up when they grow.
+- **Entry buttons**: **▤ Workbench** opens the workbench pane on the last tab you used; **⚙ Settings** opens the settings pane. Both sit at the right end of the progress row.
+- **Tokens**: input, output, cache read, cache write and the narrator's own usage, plus cache hit rate, the cost of this turn and context usage. Small SVG icons on Desktop, Unicode symbols in the terminal; the input and output icons light up when they grow. Click **ⓘ** to show a legend of what each icon means (a click, not a hover, so sweeping the pointer across the row pops nothing up).
 
 ### Workbench pane (`/workbench`)
 
@@ -52,7 +52,7 @@ Click **⚙ Settings** in the workbench pane (or run `/workbench settings`): eac
 | --- | --- | --- |
 | `language` | `auto` | `auto` follows Claude Code's `language` setting, then the system locale (`LC_ALL` / `LANG`); `en` English; `zh` Simplified Chinese |
 | `bandMode` | `band` | `band` above the prompt; `status` one line in the status bar, so other plugins that draw above the prompt can coexist; `off` only the `/workbench` pane |
-| `narrationOverflow` | `truncate` | When the narration is longer than the band: `truncate` keeps one line and shows the full text on hover; `wrap` uses more lines; `scroll` slides it sideways on Desktop (wraps in the terminal) |
+| `narrationOverflow` | `truncate` | When the narration is longer than the band: `truncate` keeps one line with a **Full text** button next to it; `wrap` uses more lines; `scroll` slides it sideways on Desktop (wraps in the terminal) |
 | `narratorMode` | `full` | `full` reads tool calls plus the model's thinking and reply; `lite` updates on tool calls only; `off` makes no model calls and the band shows the current step |
 | `narratorIntervalSeconds` | `8` | Minimum seconds between two narration updates (3–120) |
 | `narratorMaterialChars` | `400` | In `full` mode, how many new characters the model writes before the narration updates again (100–5000) |

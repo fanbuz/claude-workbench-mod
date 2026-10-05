@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- **Long narration** (#17): the full narration is kept (it used to be clipped to 32 characters at the source), and the new `narrationOverflow` option chooses `truncate` (full text on hover), `wrap` or `scroll` (a self-animating SVG on Desktop, wrap in the terminal).
+- **Long narration** (#17): the full narration is kept (it used to be clipped to 32 characters at the source), and the new `narrationOverflow` option chooses `truncate` (a **Full text** button expands it), `wrap` or `scroll` (a self-animating SVG on Desktop, wrap in the terminal).
 - **Fix: terminal icons**: the terminal now shows the Unicode token symbols; it used to get the SVG's alt text because its element table also lists `Svg`.
-- **Band entry buttons** (#16): "▤ Workbench" and "⚙" (with a hover tip) are pinned to the right end of the progress row; the step count is plain text now.
+- **Band entry buttons** (#16): "▤ Workbench" and "⚙ Settings" are pinned to the right end of the progress row; the step count is plain text now.
 - **Fix: clicks lost while Claude works** (#15): nothing redraws on a fast timer any more. The working dots animate inside a non-interactive SVG (static dots in the terminal), the "This turn" tab updates with step events, and the band's elapsed time ticks every 5 s while working.
-- **Token row tooltips** (#13): resting the pointer on an icon shows what it means, as an overlay card drawn by the surface's hover, with no redraw.
+- **Token row legend** (#13, #18): click **ⓘ** at the end of the token row to show what each icon means. Hover cards were tried first and dropped: the surface's hover has no delay, so sweeping the pointer popped up a row of cards, and Desktop drew them white on white.
 - **Settings pane** (#12): a "⚙ Settings" button in the workbench pane (or `/workbench settings`) opens a pane where each option is a row of choice buttons; a click saves it through `$.config.set`, the same path as `/config`, so options can be changed in the Desktop Code tab too.
 
 ## 0.3.0

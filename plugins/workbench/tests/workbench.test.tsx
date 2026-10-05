@@ -56,21 +56,22 @@ test('zh: band, turn steps and changes render on terminal and desktop', { option
   // 旁白条：终端画符号，桌面画 SVG 图标；点步数打开工作台
   const term = await $.ui.mount({ plugin: 'workbench', surface: 'terminal', ...(BAND as never) })
   expect(await term.find({ type: 'Text', text: /688k/ })).toBeDefined()
-  // 悬停提示卡片画在树里（默认隐藏），每个指标一张
-  expect(await term.find({ type: 'Text', text: /缓存读：从提示缓存读取/ })).toBeDefined()
-  expect((await term.find({ key: 'tip-cacheRead' }))?.type).toBe('Box')
+  // 图例默认收起，点 ⓘ 才展开（不靠悬停）
+  expect(await term.find({ type: 'Text', text: '缓存读（最便宜）' })).toBeUndefined()
+  await term.press({ key: 'legend-toggle' })
+  expect(await term.find({ type: 'Text', text: '缓存读（最便宜）' })).toBeDefined()
+  await term.press({ key: 'legend-toggle' })
   expect(await term.find({ type: 'Text', text: '≡↑' })).toBeDefined() // 终端用 Unicode 符号，不是 SVG 的替代文字
   await term.unmount()
 
   const desk = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
   expect(await desk.find({ type: 'Svg' })).toBeDefined()
   expect(await desk.find({ type: 'Text', text: /26%/ })).toBeDefined()
-  expect(await desk.find({ type: 'Text', text: /上下文窗口已用比例/ })).toBeDefined()
   await desk.press({ key: 'open-workbench' })
   expect(opened).toContain('workbench')
   await desk.press({ key: 'band-open-settings' })
   expect(opened).toContain('workbench-settings')
-  expect(await desk.find({ type: 'Text', text: /^工作台设置$/ })).toBeDefined() // ⚙ 的悬停提示
+  expect(await desk.find({ type: 'Button', text: '⚙ 设置' })).toBeDefined()
   await desk.unmount()
 
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -325,6 +326,13 @@ for (const mode of ['truncate', 'wrap', 'scroll'] as const) {
     const desk = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
     if (mode === 'scroll') expect((await desk.find({ type: 'Svg' }))?.props.alt).toBe(LONG)
     else expect(await desk.find({ type: 'Text', text: LONG })).toBeDefined() // 全文没有被截在 32 字
+    if (mode === 'truncate') {
+      // 放不下时有「全文」按钮，点了换行显示，再点收起
+      await desk.press({ key: 'narration-expand' })
+      expect((await desk.find({ type: 'Text', text: LONG }))?.props.wrap).toBe('wrap')
+      await desk.press({ key: 'narration-expand' })
+      expect((await desk.find({ type: 'Text', text: LONG }))?.props.wrap).toBe('truncate-end')
+    }
     await desk.unmount()
 
     // 终端没有 SVG：滚动退回换行，全文照样在

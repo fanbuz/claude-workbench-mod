@@ -24,8 +24,6 @@ import {
   MARQUEE_H,
   DOTS_H,
   DOTS_W,
-  TIP_BG,
-  TIP_FG,
   SETTING_FIELDS,
   IDLE,
   OLIVE,
@@ -84,6 +82,8 @@ const gitAtom = atom({ plugin: 'workbench', key: 'git' } as const, {
 } as GitSnapshot)
 const historyAtom = atom({ plugin: 'workbench', key: 'history' } as const, [] as TurnRecord[])
 const expandedTurnAtom = atom({ plugin: 'workbench', key: 'expandedTurn' } as const, null as string | null)
+const legendAtom = atom({ plugin: 'workbench', key: 'legendOpen' } as const, false)
+const narrationExpandedAtom = atom({ plugin: 'workbench', key: 'narrationExpanded' } as const, false)
 const confirmCompactAtom = atom({ plugin: 'workbench', key: 'confirmCompact' } as const, false)
 
 const PANE = 'workbench'
@@ -479,6 +479,7 @@ export const register: Register = (on, options) => {
     turnFiles = new Set()
     await update($, stepsAtom, () => ({ request: e.text.replace(/\s+/g, ' ').slice(0, 200), items: [] }))
     await update($, expandedAtom, () => null)
+    await update($, narrationExpandedAtom, () => false) // 新一轮的旁白先收起
     costAtStart = await $.session.usage().then(
       u => u.cost?.usd ?? null,
       () => null,
@@ -573,6 +574,8 @@ export const register: Register = (on, options) => {
     const line = await read($, lineAtom)
     if (config.bandMode !== 'band' || e.props.hasSurvey || !line) return next(e)
     await read($, tickAtom) // 订阅慢速时钟，让用时走起来
+    const isLegendOpen = await read($, legendAtom)
+    const isExpanded = await read($, narrationExpandedAtom)
     const gitState = await read($, gitAtom)
 
     const resolved = $.ui.resolve(e)
@@ -602,72 +605,64 @@ export const register: Register = (on, options) => {
         <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
           <Svg source={marqueeSvg(line.text, color, isWorkingNow, marqueeW)} alt={line.text} width={marqueeW} height={MARQUEE_H} />
         </Box>
-      ) : overflow === 'wrap' ? (
+      ) : overflow === 'wrap' || isExpanded ? (
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text bold={isWorkingNow} color={color} wrap="wrap">
             {line.text}
           </Text>
         </Box>
       ) : (
-        // 省略：单行截断，悬停时在下方浮出全文卡片
-        <Box key="narration" position="relative" flexGrow={1} flexShrink={1} minWidth={0}>
+        // 省略：单行截断；放不下时旁边有「全文」按钮，点了才展开
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text bold={isWorkingNow} color={color} wrap="truncate-end">
             {line.text}
           </Text>
-          <Box
-            position="absolute"
-            top={1}
-            left={0}
-            width={Math.min(cellWidth(line.text) + 2, Math.max(20, e.props.bodyColumns - 4))}
-            paddingX={1}
-            backgroundColor={TIP_BG}
-            display="none"
-            hover={{ display: 'flex' }}
-          >
-            <Text color={TIP_FG} wrap="wrap">
-              {line.text}
-            </Text>
-          </Box>
         </Box>
       )
+    // 估算放不下：按格数比较，右侧还有状态格和按钮。Desktop 用的是比例字体，格数和实际宽度对不准，
+    // 门槛放宽到六成：宁可在刚好放得下时多显示一个「全文」，也不要截断了却没有入口
+    const isLong = cellWidth(line.text) > (e.props.bodyColumns - 16) * 0.6
+    const expandToggle =
+      overflow === 'truncate' && (isLong || isExpanded) ? (
+        <Box key="narration-toggle" flexShrink={0}>
+          <Button
+            key="narration-expand"
+            plain
+            dimColor
+            label={isExpanded ? tr().collapseNarration : tr().expandNarration}
+            hover={{ underline: true, dimColor: false }}
+            onPress={() => void update($, narrationExpandedAtom, v => !v)}
+          />
+        </Box>
+      ) : null
 
-    // 悬停提示：叠在上一行上面的深色卡片，默认隐藏，指针停在这个指标上时由界面直接显示，
-    // 不经过插件、不重绘，也不挤动别的内容。靠右的几项卡片向左展开，免得被横幅右边裁掉
-    const tip = (kind: IconKind) => {
-      const text = tr().tips[kind]
-      const isRight = kind === 'hit' || kind === 'cost' || kind === 'context'
-      return (
-        <Box
-          position="absolute"
-          top={-1}
-          {...(isRight ? { right: 0 } : { left: 0 })}
-          width={cellWidth(text) + 2}
-          paddingX={1}
-          backgroundColor={TIP_BG}
-          display="none"
-          hover={{ display: 'flex' }}
-        >
-          <Text color={TIP_FG} wrap="truncate-end">
-            {text}
-          </Text>
-        </Box>
+    // 图标的含义：悬停弹出太容易误触（引擎的悬停没有延迟），改成点 ⓘ 才在下方展开图例
+    const icon = (kind: IconKind, c: string) =>
+      Svg ? (
+        <Svg source={ICONS[kind](c)} alt={tr().alt[kind]} width={iconWidth(kind)} height={ICON_H} />
+      ) : (
+        <Text color={c}>{GLYPHS[kind]}</Text>
       )
-    }
+    const legend = (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        {(['input', 'output', 'cacheRead', 'cacheWrite', 'narrator', 'hit', 'cost', 'context'] as const).map(kind => (
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            {icon(kind, kind === 'input' ? CLAY : kind === 'output' ? SKY : kind === 'cacheRead' ? OLIVE : kind === 'cacheWrite' ? AMBER : kind === 'hit' || kind === 'context' ? CLAY_MUTED : kind === 'cost' ? OLIVE : IDLE)}
+            <Text dimColor>{tr().legend[kind]}</Text>
+          </Box>
+        ))}
+      </Box>
+    )
 
     // 一个指标：图标 + 加粗数值；图标颜色表示类别，刚增长时换成高亮色、数值同色
     const stat = (kind: IconKind, value: string, tint: string, isLit = false) => {
       const c = isLit ? tint : kind === 'input' || kind === 'output' ? IDLE : tint
       return (
-        <Box key={`tip-${kind}`} position="relative" flexDirection="row" alignItems="center" gap={1}>
-          {Svg ? (
-            <Svg source={ICONS[kind](c)} alt={tr().alt[kind]} width={iconWidth(kind)} height={ICON_H} />
-          ) : (
-            <Text color={c}>{GLYPHS[kind]}</Text>
-          )}
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          {icon(kind, c)}
           <Text bold color={isLit ? tint : undefined}>
             {value}
           </Text>
-          {tip(kind)}
         </Box>
       )
     }
@@ -677,6 +672,7 @@ export const register: Register = (on, options) => {
         {/* 旁白占满左侧，状态钉在右侧固定宽度的格子里：文字长短变化不会挪动它 */}
         <Box flexDirection="row" gap={1}>
           {narration}
+          {expandToggle}
           <Box width={6} flexShrink={0} justifyContent="flex-end">
             {isWorkingNow ? (
               Svg ? (
@@ -734,21 +730,7 @@ export const register: Register = (on, options) => {
           </Box>
           <Box flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
             <Button key="open-workbench" label={tr().openWorkbench} onPress={() => void openLastTab($)} />
-            <Box key="band-settings" position="relative">
-              <Button key="band-open-settings" label="⚙" onPress={() => void openSettings($)} />
-              <Box
-                position="absolute"
-                top={-1}
-                right={0}
-                width={cellWidth(tr().settingsTitle) + 2}
-                paddingX={1}
-                backgroundColor={TIP_BG}
-                display="none"
-                hover={{ display: 'flex' }}
-              >
-                <Text color={TIP_FG}>{tr().settingsTitle}</Text>
-              </Box>
-            </Box>
+            <Button key="band-open-settings" label={tr().settingsButton} onPress={() => void openSettings($)} />
           </Box>
         </Box>
 
@@ -763,8 +745,7 @@ export const register: Register = (on, options) => {
             {hitRate !== null && stat('hit', `${hitRate}%`, CLAY_MUTED)}
             {line.costUsd !== null && stat('cost', line.costUsd.toFixed(line.costUsd < 1 ? 3 : 2), OLIVE)}
             {ctx !== null && (
-              <Box key="tip-context" position="relative" flexDirection="row" alignItems="center" gap={1}>
-                {tip('context')}
+              <Box flexDirection="row" alignItems="center" gap={1}>
                 {Svg ? (
                   <Svg source={ICONS.context(ctxColor)} alt={tr().alt.context} width={ICON_H} height={ICON_H} />
                 ) : (
@@ -780,8 +761,19 @@ export const register: Register = (on, options) => {
                 </Text>
               </Box>
             )}
+            <Box key="legend-toggle-box">
+              <Button
+                key="legend-toggle"
+                plain
+                dimColor={!isLegendOpen}
+                label={isLegendOpen ? tr().legendHide : tr().legendShow}
+                hover={{ underline: true, dimColor: false }}
+                onPress={() => void update($, legendAtom, v => !v)}
+              />
+            </Box>
           </Box>
         )}
+        {hasTokens && isLegendOpen && legend}
       </Box>
     )
   })

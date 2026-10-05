@@ -166,7 +166,7 @@ const en = {
     },
     narrationOverflow: {
       title: 'Long narration',
-      desc: 'Truncate shows the rest on hover; Wrap uses more lines; Scroll slides it sideways (wraps in the terminal).',
+      desc: 'Truncate adds a Full text button; Wrap uses more lines; Scroll slides it sideways (wraps in the terminal).',
       choice: (v: string) => (v === 'truncate' ? 'Truncate' : v === 'wrap' ? 'Wrap' : 'Scroll'),
     },
     narratorMode: {
@@ -186,16 +186,20 @@ const en = {
     },
   } as Record<string, { title: string; desc: string; choice: (v: string, resolved: string) => string }>,
 
-  // hover tips on the token row
-  tips: {
-    input: 'Input: new tokens sent this turn, not served from cache',
-    output: 'Output: tokens the model wrote this turn',
-    cacheRead: 'Cache read: input served from the prompt cache, the cheapest kind',
-    cacheWrite: 'Cache write: input written to the prompt cache this turn',
-    narrator: 'Narrator: tokens the narration itself used (Haiku)',
-    hit: 'Cache hit rate: share of input read from the cache',
-    cost: 'Cost of this turn, narrator included',
-    context: 'Context window used; compact it when it gets full',
+  // click-to-show legend under the token row, and the narration expand toggle
+  legendShow: 'ⓘ',
+  legendHide: 'ⓘ Hide',
+  expandNarration: 'Full text',
+  collapseNarration: 'Collapse',
+  legend: {
+    input: 'Input (not cached)',
+    output: 'Output',
+    cacheRead: 'Cache read (cheapest)',
+    cacheWrite: 'Cache write',
+    narrator: 'Narrator usage',
+    hit: 'Cache hit rate',
+    cost: 'Cost this turn',
+    context: 'Context used',
   },
 
   // icon alt text
@@ -360,7 +364,7 @@ const zh: Messages = {
     },
     narrationOverflow: {
       title: '旁白文字过长时',
-      desc: '省略：悬停看全文；换行：折成多行显示；滚动：单行左右滚动（终端里改为换行）。',
+      desc: '省略：旁边有「全文」按钮；换行：折成多行显示；滚动：单行左右滚动（终端里改为换行）。',
       choice: v => (v === 'truncate' ? '省略' : v === 'wrap' ? '换行' : '滚动'),
     },
     narratorMode: {
@@ -380,15 +384,19 @@ const zh: Messages = {
     },
   },
 
-  tips: {
-    input: '输入：本轮新发给模型的 token，没有命中缓存的部分',
-    output: '输出：模型本轮生成的 token',
-    cacheRead: '缓存读：从提示缓存读取的输入，单价最低',
-    cacheWrite: '缓存写：本轮写入提示缓存的输入',
-    narrator: '旁白：旁白自己用掉的 token（Haiku）',
-    hit: '缓存命中率：输入里来自缓存的比例',
-    cost: '本轮花费，含旁白',
-    context: '上下文窗口已用比例，快满时需要压缩',
+  legendShow: 'ⓘ',
+  legendHide: 'ⓘ 收起',
+  expandNarration: '全文',
+  collapseNarration: '收起',
+  legend: {
+    input: '输入（未命中缓存）',
+    output: '输出',
+    cacheRead: '缓存读（最便宜）',
+    cacheWrite: '缓存写',
+    narrator: '旁白用量',
+    hit: '缓存命中率',
+    cost: '本轮花费',
+    context: '上下文占用',
   },
 
   alt: {

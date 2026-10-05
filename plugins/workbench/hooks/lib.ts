@@ -168,10 +168,6 @@ export function cellWidth(text: string): number {
   return n
 }
 
-// 悬停提示卡片的配色：深底浅字，浅色和深色主题里都和横幅区分得开
-export const TIP_BG = '#3D3A35'
-export const TIP_FG = '#F5F3EF'
-
 // 工作中的三个圆点：动画写在 SVG 里（SMIL），由图片自己播放，插件不用为它重绘。
 // 横幅一重绘按钮就会被替换，点击容易落空，所以周期性的动画不能靠重绘来驱动
 export const DOTS_W = 30

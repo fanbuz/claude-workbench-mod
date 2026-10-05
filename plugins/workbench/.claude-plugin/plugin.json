@@ -29,7 +29,7 @@
     "narrationOverflow": {
       "type": "string",
       "title": "Long narration",
-      "description": "truncate: one line, full text on hover; wrap: more lines; scroll: slides sideways on Desktop (wraps in the terminal)",
+      "description": "truncate: one line with a Full text button; wrap: more lines; scroll: slides sideways on Desktop (wraps in the terminal)",
       "default": "truncate",
       "options": [
         "truncate",
