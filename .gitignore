@@ -1,0 +1,5 @@
+# Claude Code 加载 mod 时生成的类型声明，每台机器各自生成
+**/.claude-plugin/types/
+.claude/
+node_modules/
+.DS_Store
