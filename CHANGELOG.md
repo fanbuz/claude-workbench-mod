@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Band entry buttons** (#16): "▤ Workbench" and "⚙" (with a hover tip) are pinned to the right end of the progress row; the step count is plain text now.
 - **Fix: clicks lost while Claude works** (#15): nothing redraws on a fast timer any more. The working dots animate inside a non-interactive SVG (static dots in the terminal), the "This turn" tab updates with step events, and the band's elapsed time ticks every 5 s while working.
 - **Token row tooltips** (#13): resting the pointer on an icon shows what it means, as an overlay card drawn by the surface's hover, with no redraw.
 - **Settings pane** (#12): a "⚙ Settings" button in the workbench pane (or `/workbench settings`) opens a pane where each option is a row of choice buttons; a click saves it through `$.config.set`, the same path as `/config`, so options can be changed in the Desktop Code tab too.

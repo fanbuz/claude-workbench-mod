@@ -416,6 +416,10 @@ async function openPane($: EngineInterface, tab: WorkbenchTab) {
   await $.ui.open({ id: PANE, title: tr().paneTitle })
 }
 
+async function openLastTab($: EngineInterface) {
+  await openPane($, await read($, tabAtom))
+}
+
 async function switchTab($: EngineInterface, tab: WorkbenchTab) {
   await update($, tabAtom, () => tab)
   if (tab === 'changes' && Date.now() - ((await read($, gitAtom)).updatedAt ?? 0) > GIT_STALE_MS) void refreshGit($)
@@ -656,54 +660,60 @@ export const register: Register = (on, options) => {
           {rule}
         </Text>
 
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          <Box key="open-steps">
-            <Button
-              key="steps"
-              plain
-              label={tr().bandSteps(isWorkingNow, line.steps)}
-              hover={{ underline: true, color: CLAY }}
-              onPress={() => void openPane($, 'turn')}
-            />
+        {/* 进度行：左边是信息，右边钉着两个入口按钮（工作台、设置），左边再长也挤不走它们 */}
+        <Box flexDirection="row" alignItems="center" gap={2}>
+          <Box flexGrow={1} flexShrink={1} minWidth={0} flexDirection="row" flexWrap="wrap" columnGap={2}>
+            <Text>{tr().bandSteps(isWorkingNow, line.steps)}</Text>
+            <Text>
+              <Text dimColor>{tr().bandTime}</Text>
+              <Text bold>{elapsed}</Text>
+            </Text>
+            {line.errors > 0 && (
+              <Box key="open-errors">
+                <Button
+                  key="errors"
+                  plain
+                  label={tr().bandFailures(line.errors)}
+                  hover={{ underline: true }}
+                  onPress={() => void openPane($, 'turn')}
+                />
+              </Box>
+            )}
+            {gitState.files.length > 0 && (
+              <Box key="open-changes">
+                <Button
+                  key="changes"
+                  plain
+                  label={tr().bandChanges(gitState.files.length)}
+                  hover={{ underline: true, color: CLAY }}
+                  onPress={() => void openPane($, 'changes')}
+                />
+              </Box>
+            )}
+            {line.current && (
+              <Text dimColor wrap="truncate-end">
+                ▸ {line.current}
+              </Text>
+            )}
           </Box>
-          <Text>
-            <Text dimColor>{tr().bandTime}</Text>
-            <Text bold>{elapsed}</Text>
-          </Text>
-          {line.errors > 0 && (
-            <Box key="open-errors">
-              <Button
-                key="errors"
-                plain
-                label={tr().bandFailures(line.errors)}
-                hover={{ underline: true }}
-                onPress={() => void openPane($, 'turn')}
-              />
+          <Box flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
+            <Button key="open-workbench" label={tr().openWorkbench} onPress={() => void openLastTab($)} />
+            <Box key="band-settings" position="relative">
+              <Button key="band-open-settings" label="⚙" onPress={() => void openSettings($)} />
+              <Box
+                position="absolute"
+                top={-1}
+                right={0}
+                width={cellWidth(tr().settingsTitle) + 2}
+                paddingX={1}
+                backgroundColor={TIP_BG}
+                display="none"
+                hover={{ display: 'flex' }}
+              >
+                <Text color={TIP_FG}>{tr().settingsTitle}</Text>
+              </Box>
             </Box>
-          )}
-          {gitState.files.length > 0 && (
-            <Box key="open-changes">
-              <Button
-                key="changes"
-                plain
-                label={tr().bandChanges(gitState.files.length)}
-                hover={{ underline: true, color: CLAY }}
-                onPress={() => void openPane($, 'changes')}
-              />
-            </Box>
-          )}
-          {line.current && (
-            <Box key="open-current" minWidth={0}>
-              <Button
-                key="current"
-                plain
-                dimColor
-                label={`▸ ${line.current}`}
-                hover={{ underline: true, color: CLAY, dimColor: false }}
-                onPress={() => void openPane($, 'turn')}
-              />
-            </Box>
-          )}
+          </Box>
         </Box>
 
         {hasTokens && (

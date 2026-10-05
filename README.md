@@ -15,12 +15,13 @@ The idea comes from [Wangnov/shnote](https://github.com/Wangnov/shnote), which m
 ```
 Reading the README to learn what the project does          ● ● ○
 ────────────────────────────────────────────────────────
-Step 5 ›   Time 1m03s   3 files changed ›   ▸ Bash · ls -la
+Step 5   Time 1m03s   3 files changed ›   ▸ Bash · ls -la     [ ▤ Workbench ] [ ⚙ ]
 ↑ 4   ↓ 2.3k   ≡↑ 688k   ≡↓ 2.3k   ❝ 1.3k  │  ◎ 99%   $ 0.127   ▤ ▰▰▰▱▱▱▱▱▱▱ 26%
 ```
 
 - **Narration**: Haiku turns your request, the latest tool calls and what the model is thinking or writing into one short sentence about what Claude is doing and why. When the turn ends it becomes a one-line summary. The dots on the right mean Claude is working; they become ✓ when it is done.
-- **Progress**: steps, elapsed time, failures, changed files and the current tool. Each one is clickable and opens the matching workbench tab.
+- **Progress**: steps, elapsed time, failures, changed files and the current tool. "N failed" and "N files changed" jump to their tab.
+- **Entry buttons**: **▤ Workbench** opens the workbench pane on the last tab you used; **⚙** opens the settings pane. Both sit at the right end of the progress row.
 - **Tokens**: input, output, cache read, cache write and the narrator's own usage, plus cache hit rate, the cost of this turn and context usage. Small SVG icons on Desktop, Unicode symbols in the terminal; the input and output icons light up when they grow.
 
 ### Workbench pane (`/workbench`)

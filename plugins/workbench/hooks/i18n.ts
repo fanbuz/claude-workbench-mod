@@ -68,7 +68,8 @@ const en = {
   compactSkipped: (reason: string) => `Not compacted: ${reason}`,
 
   // band
-  bandSteps: (isWorking: boolean, n: number) => (isWorking ? `Step ${n} ›` : `${n} steps ›`),
+  bandSteps: (isWorking: boolean, n: number) => (isWorking ? `Step ${n}` : `${n} steps`),
+  openWorkbench: '▤ Workbench',
   bandTime: 'Time ',
   bandFailures: (n: number) => `✗ ${n} failed ›`,
   bandChanges: (n: number) => `${n} files changed ›`,
@@ -263,7 +264,8 @@ const zh: Messages = {
   compacted: '上下文已压缩',
   compactSkipped: reason => `没有压缩：${reason}`,
 
-  bandSteps: (isWorking, n) => `${isWorking ? '步骤' : '共'} ${n} 步 ›`,
+  bandSteps: (isWorking, n) => `${isWorking ? '步骤' : '共'} ${n} 步`,
+  openWorkbench: '▤ 工作台',
   bandTime: '用时 ',
   bandFailures: n => `✗ ${n} 次失败 ›`,
   bandChanges: n => `改动 ${n} 个文件 ›`,

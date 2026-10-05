@@ -65,8 +65,11 @@ test('zh: band, turn steps and changes render on terminal and desktop', { option
   expect(await desk.find({ type: 'Svg' })).toBeDefined()
   expect(await desk.find({ type: 'Text', text: /26%/ })).toBeDefined()
   expect(await desk.find({ type: 'Text', text: /上下文窗口已用比例/ })).toBeDefined()
-  await desk.press({ key: 'steps' })
+  await desk.press({ key: 'open-workbench' })
   expect(opened).toContain('workbench')
+  await desk.press({ key: 'band-open-settings' })
+  expect(opened).toContain('workbench-settings')
+  expect(await desk.find({ type: 'Text', text: /^工作台设置$/ })).toBeDefined() // ⚙ 的悬停提示
   await desk.unmount()
 
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -221,7 +224,8 @@ test('en: English UI by default when nothing points to Chinese', async ($, on) =
   await $.tool.call({ tool: 'Bash', command: 'ls -la', description: 'list' } as never)
 
   const band = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
-  expect(await band.find({ type: 'Button', text: /Step 1 ›/ })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^Step 1$/ })).toBeDefined()
+  expect(await band.find({ type: 'Button', text: /Workbench/ })).toBeDefined()
   await band.unmount()
 
   const pane = await $.ui.mount({ plugin: 'workbench', surface: 'terminal', ...(PANE as never) })
