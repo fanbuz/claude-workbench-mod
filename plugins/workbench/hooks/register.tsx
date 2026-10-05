@@ -21,6 +21,7 @@ import {
   GLYPHS,
   ICONS,
   ICON_H,
+  MARQUEE_H,
   DOTS_H,
   DOTS_W,
   TIP_BG,
@@ -46,6 +47,7 @@ import {
   iconWidth,
   isOwnConfigKey,
   labelOf,
+  marqueeSvg,
   mergeNumstat,
   money,
   narratorConfig,
@@ -575,7 +577,8 @@ export const register: Register = (on, options) => {
 
     const resolved = $.ui.resolve(e)
     const { Box, Text, Button } = resolved
-    const Svg = 'Svg' in resolved ? resolved.Svg : null
+    // 终端的组件表里也有 Svg，但只会显示替代文字，所以按表面判断：终端走 Unicode 符号和纯文本
+    const Svg = e.surface !== 'terminal' && 'Svg' in resolved ? resolved.Svg : null
     const now = Date.now()
     const isWorkingNow = line.phase === 'working'
     const elapsed = duration((line.endedAt ?? now) - line.startedAt)
@@ -590,6 +593,43 @@ export const register: Register = (on, options) => {
     const ctxFilled = ctx === null ? 0 : Math.max(0, Math.min(10, Math.round(ctx / 10)))
     const rule = '─'.repeat(Math.max(10, Math.min(240, e.props.bodyColumns - 2)))
     const isFresh = (at: number) => isWorkingNow && now - at < FLASH_MS
+
+    // 第一行旁白：按 narrationOverflow 决定放不下时怎么办
+    const overflow = config.overflow === 'scroll' && !Svg ? 'wrap' : config.overflow
+    const marqueeW = Math.max(200, Math.min(1400, (e.props.bodyColumns - 10) * 8))
+    const narration =
+      overflow === 'scroll' && Svg ? (
+        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+          <Svg source={marqueeSvg(line.text, color, isWorkingNow, marqueeW)} alt={line.text} width={marqueeW} height={MARQUEE_H} />
+        </Box>
+      ) : overflow === 'wrap' ? (
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text bold={isWorkingNow} color={color} wrap="wrap">
+            {line.text}
+          </Text>
+        </Box>
+      ) : (
+        // 省略：单行截断，悬停时在下方浮出全文卡片
+        <Box key="narration" position="relative" flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text bold={isWorkingNow} color={color} wrap="truncate-end">
+            {line.text}
+          </Text>
+          <Box
+            position="absolute"
+            top={1}
+            left={0}
+            width={Math.min(cellWidth(line.text) + 2, Math.max(20, e.props.bodyColumns - 4))}
+            paddingX={1}
+            backgroundColor={TIP_BG}
+            display="none"
+            hover={{ display: 'flex' }}
+          >
+            <Text color={TIP_FG} wrap="wrap">
+              {line.text}
+            </Text>
+          </Box>
+        </Box>
+      )
 
     // 悬停提示：叠在上一行上面的深色卡片，默认隐藏，指针停在这个指标上时由界面直接显示，
     // 不经过插件、不重绘，也不挤动别的内容。靠右的几项卡片向左展开，免得被横幅右边裁掉
@@ -636,11 +676,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1}>
         {/* 旁白占满左侧，状态钉在右侧固定宽度的格子里：文字长短变化不会挪动它 */}
         <Box flexDirection="row" gap={1}>
-          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-            <Text bold={isWorkingNow} color={color} wrap="truncate-end">
-              {line.text}
-            </Text>
-          </Box>
+          {narration}
           <Box width={6} flexShrink={0} justifyContent="flex-end">
             {isWorkingNow ? (
               Svg ? (
@@ -1013,7 +1049,7 @@ export const register: Register = (on, options) => {
       const ctxColor = ctx === null ? CLOUD : ctx >= 85 ? ALERT : ctx >= 60 ? AMBER : CLAY_MUTED
       const ctxFilled = ctx === null ? 0 : Math.max(0, Math.min(10, Math.round(ctx / 10)))
       const resolved = $.ui.resolve(e)
-      const Svg = 'Svg' in resolved ? resolved.Svg : null
+      const Svg = e.surface !== 'terminal' && 'Svg' in resolved ? resolved.Svg : null
       const chartW = Math.max(240, Math.min(720, e.props.bodyColumns * 7))
 
       return (
@@ -1145,6 +1181,7 @@ export const register: Register = (on, options) => {
     const current: Record<SettingField, string> = {
       language: config.language,
       bandMode: config.bandMode,
+      narrationOverflow: config.overflow,
       narratorMode: config.mode,
       narratorIntervalSeconds: String(config.minGapMs / 1000),
       narratorMaterialChars: String(config.materialStep),

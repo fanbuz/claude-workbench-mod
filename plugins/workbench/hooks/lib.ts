@@ -111,13 +111,15 @@ export function errorOf(ran: { deny?: string; isError?: boolean; text?: string }
 }
 
 // ── 旁白 ──────────────────────────────────────────────────────────────────
+const NARRATION_MAX = 120
+
 export function oneLine(text: string): string {
   const line = text
     .replace(/\s+/g, ' ')
     .replace(/^["“「]|["”」]$/g, '')
     .replace(/[。.]$/, '')
     .trim()
-  return clip(line, tr().maxLine) // 模型偶尔超字数，这里兜底截断
+  return clip(line, NARRATION_MAX) // 保留全文，只防极端长度；显示时再按 narrationOverflow 处理
 }
 
 // ── token 图标：16px 高的线性小图标，桌面端画 SVG，终端退回 Unicode 符号 ──────────
@@ -183,6 +185,34 @@ export function dotsSvg(on: string, off: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${DOTS_W}" height="${DOTS_H}" viewBox="0 0 ${DOTS_W} ${DOTS_H}">${dot(5, 0)}${dot(15, 0.3)}${dot(25, 0.6)}</svg>`
 }
 
+// 「滚动」模式：把旁白画成一张自带动画的 SVG（SMIL），放不下时左右来回滚，两头各停一下。
+// 不靠重绘驱动，所以不会影响按钮点击。textLength 把文字压到估算宽度上，估算和实际画出来的一致
+export const MARQUEE_H = 20
+
+function textPixels(text: string, fontSize: number): number {
+  let w = 0
+  for (const ch of text) w += cellWidth(ch) === 2 ? fontSize : fontSize * 0.56
+  return Math.ceil(w)
+}
+
+export function marqueeSvg(text: string, color: string, isBold: boolean, width: number): string {
+  const fontSize = 14
+  const textW = textPixels(text, fontSize)
+  const font = `font-family="-apple-system, 'PingFang SC', 'Segoe UI', sans-serif" font-size="${fontSize}" font-weight="${isBold ? 600 : 400}"`
+  const escaped = text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+  const fits = textW <= width
+  const dist = textW - width + 16
+  const dur = Math.max(6, Math.round(dist / 30) + 4) // 约 30px/s，再加两头的停顿
+  const motion = fits
+    ? ''
+    : `<animateTransform attributeName="transform" type="translate" values="0 0;0 0;${-dist} 0;${-dist} 0;0 0" keyTimes="0;0.2;0.7;0.9;1" dur="${dur}s" repeatCount="indefinite"/>`
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${MARQUEE_H}" viewBox="0 0 ${width} ${MARQUEE_H}">` +
+    `<text x="0" y="15" fill="${color}" ${font} textLength="${textW}" lengthAdjust="spacingAndGlyphs">${escaped}${motion}</text>` +
+    `</svg>`
+  )
+}
+
 export const iconWidth = (kind: IconKind) => (kind.startsWith('cache') ? (ICON_H * 22) / 16 : ICON_H)
 
 // ── git ───────────────────────────────────────────────────────────────────
@@ -232,7 +262,16 @@ export type NarratorMode = 'full' | 'lite' | 'off'
 
 export type BandMode = 'band' | 'status' | 'off'
 
-export type NarratorConfig = { mode: NarratorMode; bandMode: BandMode; language: Lang | 'auto'; minGapMs: number; materialStep: number }
+export type Overflow = 'truncate' | 'wrap' | 'scroll'
+
+export type NarratorConfig = {
+  mode: NarratorMode
+  bandMode: BandMode
+  overflow: Overflow
+  language: Lang | 'auto'
+  minGapMs: number
+  materialStep: number
+}
 
 function numberOption(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
@@ -246,6 +285,7 @@ export function narratorConfig(options: Readonly<Record<string, unknown>>): Narr
     mode: mode === 'lite' || mode === 'off' ? mode : 'full',
     bandMode: band === 'status' || band === 'off' ? band : 'band',
     language: options['language'] === 'en' || options['language'] === 'zh' ? options['language'] : 'auto',
+    overflow: options['narrationOverflow'] === 'wrap' || options['narrationOverflow'] === 'scroll' ? options['narrationOverflow'] : 'truncate',
     minGapMs: numberOption(options['narratorIntervalSeconds'], 3, 120, 8) * 1000,
     materialStep: numberOption(options['narratorMaterialChars'], 100, 5000, 400),
   }
@@ -255,6 +295,7 @@ export function narratorConfig(options: Readonly<Record<string, unknown>>): Narr
 export const SETTING_FIELDS = [
   { field: 'language', choices: ['auto', 'en', 'zh'] },
   { field: 'bandMode', choices: ['band', 'status', 'off'] },
+  { field: 'narrationOverflow', choices: ['truncate', 'wrap', 'scroll'] },
   { field: 'narratorMode', choices: ['full', 'lite', 'off'] },
   { field: 'narratorIntervalSeconds', choices: [5, 8, 15, 30, 60] },
   { field: 'narratorMaterialChars', choices: [200, 400, 800, 1600] },

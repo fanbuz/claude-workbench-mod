@@ -52,6 +52,7 @@
 | --- | --- | --- |
 | `language` | `auto` | `auto` 先看 Claude Code 的 `language` 设置，再看系统语言（`LC_ALL` / `LANG`）；`en` 英文；`zh` 简体中文 |
 | `bandMode` | `band` | `band` 输入框上方的横幅；`status` 状态栏一行，不占横幅位置，可以和其他画在横幅上的插件共存；`off` 只用 `/workbench` 面板 |
+| `narrationOverflow` | `truncate` | 旁白比横幅长时：`truncate` 单行省略，悬停看全文；`wrap` 折成多行；`scroll` 在 Desktop 上左右滚动（终端里改为换行） |
 | `narratorMode` | `full` | `full` 读工具调用和模型的思考、回复；`lite` 只在工具调用时更新；`off` 不调用模型，旁白直接显示当前步骤 |
 | `narratorIntervalSeconds` | `8` | 两次旁白更新至少间隔多少秒（3–120） |
 | `narratorMaterialChars` | `400` | `full` 模式下，模型新写出多少字才再更新一次（100–5000） |

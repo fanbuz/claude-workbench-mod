@@ -26,6 +26,17 @@
         "off"
       ]
     },
+    "narrationOverflow": {
+      "type": "string",
+      "title": "Long narration",
+      "description": "truncate: one line, full text on hover; wrap: more lines; scroll: slides sideways on Desktop (wraps in the terminal)",
+      "default": "truncate",
+      "options": [
+        "truncate",
+        "wrap",
+        "scroll"
+      ]
+    },
     "narratorMode": {
       "type": "string",
       "title": "Narrator mode",

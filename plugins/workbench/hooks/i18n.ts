@@ -164,6 +164,11 @@ const en = {
       desc: 'Status bar frees the slot above the prompt for other plugins.',
       choice: (v: string) => (v === 'band' ? 'Above the prompt' : v === 'status' ? 'Status bar' : 'Off'),
     },
+    narrationOverflow: {
+      title: 'Long narration',
+      desc: 'Truncate shows the rest on hover; Wrap uses more lines; Scroll slides it sideways (wraps in the terminal).',
+      choice: (v: string) => (v === 'truncate' ? 'Truncate' : v === 'wrap' ? 'Wrap' : 'Scroll'),
+    },
     narratorMode: {
       title: 'Narrator',
       desc: 'Lite updates on tool calls only; Off makes no model calls.',
@@ -352,6 +357,11 @@ const zh: Messages = {
       title: '旁白位置',
       desc: '放到状态栏时，输入框上方的位置留给其他插件。',
       choice: v => (v === 'band' ? '输入框上方' : v === 'status' ? '状态栏' : '关闭'),
+    },
+    narrationOverflow: {
+      title: '旁白文字过长时',
+      desc: '省略：悬停看全文；换行：折成多行显示；滚动：单行左右滚动（终端里改为换行）。',
+      choice: v => (v === 'truncate' ? '省略' : v === 'wrap' ? '换行' : '滚动'),
     },
     narratorMode: {
       title: '旁白模式',

@@ -59,6 +59,7 @@ test('zh: band, turn steps and changes render on terminal and desktop', { option
   // 悬停提示卡片画在树里（默认隐藏），每个指标一张
   expect(await term.find({ type: 'Text', text: /缓存读：从提示缓存读取/ })).toBeDefined()
   expect((await term.find({ key: 'tip-cacheRead' }))?.type).toBe('Box')
+  expect(await term.find({ type: 'Text', text: '≡↑' })).toBeDefined() // 终端用 Unicode 符号，不是 SVG 的替代文字
   await term.unmount()
 
   const desk = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
@@ -209,13 +210,13 @@ test('zh: each turn lands in the history, which can copy today\'s log', { option
 
 // 以下两个测试验证语言：默认 auto 跟随设置和系统语言
 
-const quiet = (on: Parameters<Parameters<typeof test>[1]>[1]) => {
+const quiet = (on: Parameters<Parameters<typeof test>[1]>[1], narration = 'Reading the project layout') => {
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
   on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 30 }, rateLimits: [], cost: { usd: 0.05 } } }) as never)
   on('session.cwd', () => ({ value: '/repo' }) as never)
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
-  on('model.complete', () => ({ value: { isAnswered: true, text: 'Reading the project layout' } }) as never)
+  on('model.complete', () => ({ value: { isAnswered: true, text: narration } }) as never)
 }
 
 test('en: English UI by default when nothing points to Chinese', async ($, on) => {
@@ -308,3 +309,28 @@ test('settings: the gear opens the settings pane, a pick goes through $.config.s
   ])
   await settings.unmount()
 })
+
+const LONG = '正在为工作台设置和面板打开入口做界面设计，计划在进度行右侧放置两个按钮并补上悬停提示'
+
+for (const mode of ['truncate', 'wrap', 'scroll'] as const) {
+  test(`overflow ${mode}: the full narration is kept and shown its way`, { options: { language: 'zh', narrationOverflow: mode } }, async ($, on) => {
+    quiet(on, LONG)
+    on('turn.complete', () => ({ text: '' }) as never)
+    await $.prompt.submit({ text: '设计入口' })
+    await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' } as never)
+    // 一轮结束时的总结由模型给出（这里是一句很长的话），不受 32 字限制
+    await $.turn.complete({ turnId: 't1', answer: '做好了', durationMs: 1000, isAborted: false } as never)
+    await new Promise(r => setTimeout(r, 20))
+
+    const desk = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
+    if (mode === 'scroll') expect((await desk.find({ type: 'Svg' }))?.props.alt).toBe(LONG)
+    else expect(await desk.find({ type: 'Text', text: LONG })).toBeDefined() // 全文没有被截在 32 字
+    await desk.unmount()
+
+    // 终端没有 SVG：滚动退回换行，全文照样在
+    const term = await $.ui.mount({ plugin: 'workbench', surface: 'terminal', ...(BAND as never) })
+    expect(await term.find({ type: 'Text', text: LONG })).toBeDefined()
+    expect(await term.find({ type: 'Svg' })).toBeUndefined() // 终端不画 SVG
+    await term.unmount()
+  })
+}

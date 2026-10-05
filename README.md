@@ -52,6 +52,7 @@ Click **⚙ Settings** in the workbench pane (or run `/workbench settings`): eac
 | --- | --- | --- |
 | `language` | `auto` | `auto` follows Claude Code's `language` setting, then the system locale (`LC_ALL` / `LANG`); `en` English; `zh` Simplified Chinese |
 | `bandMode` | `band` | `band` above the prompt; `status` one line in the status bar, so other plugins that draw above the prompt can coexist; `off` only the `/workbench` pane |
+| `narrationOverflow` | `truncate` | When the narration is longer than the band: `truncate` keeps one line and shows the full text on hover; `wrap` uses more lines; `scroll` slides it sideways on Desktop (wraps in the terminal) |
 | `narratorMode` | `full` | `full` reads tool calls plus the model's thinking and reply; `lite` updates on tool calls only; `off` makes no model calls and the band shows the current step |
 | `narratorIntervalSeconds` | `8` | Minimum seconds between two narration updates (3–120) |
 | `narratorMaterialChars` | `400` | In `full` mode, how many new characters the model writes before the narration updates again (100–5000) |

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Long narration** (#17): the full narration is kept (it used to be clipped to 32 characters at the source), and the new `narrationOverflow` option chooses `truncate` (full text on hover), `wrap` or `scroll` (a self-animating SVG on Desktop, wrap in the terminal).
+- **Fix: terminal icons**: the terminal now shows the Unicode token symbols; it used to get the SVG's alt text because its element table also lists `Svg`.
 - **Band entry buttons** (#16): "▤ Workbench" and "⚙" (with a hover tip) are pinned to the right end of the progress row; the step count is plain text now.
 - **Fix: clicks lost while Claude works** (#15): nothing redraws on a fast timer any more. The working dots animate inside a non-interactive SVG (static dots in the terminal), the "This turn" tab updates with step events, and the band's elapsed time ticks every 5 s while working.
 - **Token row tooltips** (#13): resting the pointer on an icon shows what it means, as an overlay card drawn by the surface's hover, with no redraw.
