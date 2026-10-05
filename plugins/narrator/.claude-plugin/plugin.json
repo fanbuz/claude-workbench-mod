@@ -1,6 +1,0 @@
-{
-  "name": "narrator",
-  "version": "0.1.0",
-  "description": "实时旁白：在输入框上方用一句人话说明 Claude 正在做什么",
-  "types": "./types/index.d.ts"
-}

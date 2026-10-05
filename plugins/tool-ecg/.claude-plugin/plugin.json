@@ -1,6 +1,0 @@
-{
-  "name": "tool-ecg",
-  "version": "0.1.0",
-  "description": "工具调用心电图：把每次工具调用画成一次心跳",
-  "types": "./types/index.d.ts"
-}

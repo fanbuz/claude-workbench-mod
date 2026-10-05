@@ -1,3 +1,4 @@
+// ── 旁白条 ──────────────────────────────────────────────
 export type NarrationPhase = 'working' | 'done' | 'interrupted'
 
 export type TokenTally = { input: number; output: number; cacheRead: number; cacheWrite: number }
@@ -18,7 +19,7 @@ export type Narration = {
   changedAt: TokenTally // 每类 token 最近一次增长的时刻，用来让图标短暂高亮
 }
 
-// 步骤面板里的一行：一次工具调用
+// ── 本轮步骤 ────────────────────────────────────────────
 export type StepView = {
   id: string
   tool: string
@@ -32,8 +33,33 @@ export type StepView = {
 
 export type TurnSteps = { request: string; items: StepView[] }
 
+// ── 改动 ────────────────────────────────────────────────
+export type TouchedFile = { path: string; edits: number; lastAt: number } // Claude 本次会话改过的文件（绝对路径）
+
+export type GitFile = { path: string; status: string; added: number | null; removed: number | null } // 相对仓库根
+
+export type GitSnapshot = {
+  isRepo: boolean
+  root: string | null
+  branch: string | null
+  files: GitFile[]
+  isLoading: boolean
+  error: string | null
+  updatedAt: number | null
+}
+
+export type WorkbenchTab = 'turn' | 'changes'
+
 declare module 'claude-code' {
   interface PluginState {
-    narrator: { line: Narration | null; tick: number; steps: TurnSteps; expanded: string | null }
+    workbench: {
+      line: Narration | null
+      tick: number
+      steps: TurnSteps
+      expanded: string | null
+      tab: WorkbenchTab
+      touched: TouchedFile[]
+      git: GitSnapshot
+    }
   }
 }

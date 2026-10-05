@@ -1,0 +1,6 @@
+{
+  "name": "workbench",
+  "version": "0.2.0",
+  "description": "工作台：输入框上方的实时旁白条，加一个「本轮步骤 / 改动」两栏的侧边面板",
+  "types": "./types/index.d.ts"
+}
