@@ -1,5 +1,11 @@
 # 更新日志
 
+## 0.2.1
+
+- **本轮步骤快捷操作**（#6）：展开任意一步可复制完整命令、填入输入框；失败的步骤可一键「让 Claude 排查并重试」
+- **旁白可配置**（#5）：新增 `narratorMode`（`full` / `lite` / `off`）、`narratorIntervalSeconds`、`narratorMaterialChars` 三个配置项
+- **文档**（#8）：MIT 许可证；注明思路参考 [Wangnov/shnote](https://github.com/Wangnov/shnote)
+
 ## 0.2.0
 
 把旁白条和步骤面板合成一个 `workbench` 插件，侧边面板改为带标签页的工作台（#2）。
