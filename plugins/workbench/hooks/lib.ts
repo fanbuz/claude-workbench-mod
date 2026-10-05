@@ -159,6 +159,17 @@ export const GLYPHS: Record<IconKind, string> = {
   context: '▤',
 }
 
+// 终端里一个字符占几格：中日韩文字和全角符号占两格
+export function cellWidth(text: string): number {
+  let n = 0
+  for (const ch of text) n += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(ch) ? 2 : 1
+  return n
+}
+
+// 悬停提示卡片的配色：深底浅字，浅色和深色主题里都和横幅区分得开
+export const TIP_BG = '#3D3A35'
+export const TIP_FG = '#F5F3EF'
+
 export const iconWidth = (kind: IconKind) => (kind.startsWith('cache') ? (ICON_H * 22) / 16 : ICON_H)
 
 // ── git ───────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Token row tooltips** (#13): resting the pointer on an icon shows what it means, as an overlay card drawn by the surface's hover, with no redraw.
 - **Settings pane** (#12): a "⚙ Settings" button in the workbench pane (or `/workbench settings`) opens a pane where each option is a row of choice buttons; a click saves it through `$.config.set`, the same path as `/config`, so options can be changed in the Desktop Code tab too.
 
 ## 0.3.0

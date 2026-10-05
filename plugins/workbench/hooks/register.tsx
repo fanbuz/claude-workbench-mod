@@ -21,12 +21,15 @@ import {
   GLYPHS,
   ICONS,
   ICON_H,
+  TIP_BG,
+  TIP_FG,
   SETTING_FIELDS,
   IDLE,
   OLIVE,
   SKY,
   STONE,
   ZERO,
+  cellWidth,
   clip,
   clockTime,
   dayLabel,
@@ -581,11 +584,34 @@ export const register: Register = (on, options) => {
     const rule = '─'.repeat(Math.max(10, Math.min(240, e.props.bodyColumns - 2)))
     const isFresh = (at: number) => isWorkingNow && now - at < FLASH_MS
 
+    // 悬停提示：叠在上一行上面的深色卡片，默认隐藏，指针停在这个指标上时由界面直接显示，
+    // 不经过插件、不重绘，也不挤动别的内容。靠右的几项卡片向左展开，免得被横幅右边裁掉
+    const tip = (kind: IconKind) => {
+      const text = tr().tips[kind]
+      const isRight = kind === 'hit' || kind === 'cost' || kind === 'context'
+      return (
+        <Box
+          position="absolute"
+          top={-1}
+          {...(isRight ? { right: 0 } : { left: 0 })}
+          width={cellWidth(text) + 2}
+          paddingX={1}
+          backgroundColor={TIP_BG}
+          display="none"
+          hover={{ display: 'flex' }}
+        >
+          <Text color={TIP_FG} wrap="truncate-end">
+            {text}
+          </Text>
+        </Box>
+      )
+    }
+
     // 一个指标：图标 + 加粗数值；图标颜色表示类别，刚增长时换成高亮色、数值同色
     const stat = (kind: IconKind, value: string, tint: string, isLit = false) => {
       const c = isLit ? tint : kind === 'input' || kind === 'output' ? IDLE : tint
       return (
-        <Box flexDirection="row" alignItems="center" gap={1}>
+        <Box key={`tip-${kind}`} position="relative" flexDirection="row" alignItems="center" gap={1}>
           {Svg ? (
             <Svg source={ICONS[kind](c)} alt={tr().alt[kind]} width={iconWidth(kind)} height={ICON_H} />
           ) : (
@@ -594,6 +620,7 @@ export const register: Register = (on, options) => {
           <Text bold color={isLit ? tint : undefined}>
             {value}
           </Text>
+          {tip(kind)}
         </Box>
       )
     }
@@ -687,7 +714,8 @@ export const register: Register = (on, options) => {
             {hitRate !== null && stat('hit', `${hitRate}%`, CLAY_MUTED)}
             {line.costUsd !== null && stat('cost', line.costUsd.toFixed(line.costUsd < 1 ? 3 : 2), OLIVE)}
             {ctx !== null && (
-              <Box flexDirection="row" alignItems="center" gap={1}>
+              <Box key="tip-context" position="relative" flexDirection="row" alignItems="center" gap={1}>
+                {tip('context')}
                 {Svg ? (
                   <Svg source={ICONS.context(ctxColor)} alt={tr().alt.context} width={ICON_H} height={ICON_H} />
                 ) : (

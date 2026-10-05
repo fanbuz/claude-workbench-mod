@@ -56,11 +56,15 @@ test('zh: band, turn steps and changes render on terminal and desktop', { option
   // 旁白条：终端画符号，桌面画 SVG 图标；点步数打开工作台
   const term = await $.ui.mount({ plugin: 'workbench', surface: 'terminal', ...(BAND as never) })
   expect(await term.find({ type: 'Text', text: /688k/ })).toBeDefined()
+  // 悬停提示卡片画在树里（默认隐藏），每个指标一张
+  expect(await term.find({ type: 'Text', text: /缓存读：从提示缓存读取/ })).toBeDefined()
+  expect((await term.find({ key: 'tip-cacheRead' }))?.type).toBe('Box')
   await term.unmount()
 
   const desk = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
   expect(await desk.find({ type: 'Svg' })).toBeDefined()
   expect(await desk.find({ type: 'Text', text: /26%/ })).toBeDefined()
+  expect(await desk.find({ type: 'Text', text: /上下文窗口已用比例/ })).toBeDefined()
   await desk.press({ key: 'steps' })
   expect(opened).toContain('workbench')
   await desk.unmount()

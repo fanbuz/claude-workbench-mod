@@ -179,6 +179,18 @@ const en = {
     },
   } as Record<string, { title: string; desc: string; choice: (v: string, resolved: string) => string }>,
 
+  // hover tips on the token row
+  tips: {
+    input: 'Input: new tokens sent this turn, not served from cache',
+    output: 'Output: tokens the model wrote this turn',
+    cacheRead: 'Cache read: input served from the prompt cache, the cheapest kind',
+    cacheWrite: 'Cache write: input written to the prompt cache this turn',
+    narrator: 'Narrator: tokens the narration itself used (Haiku)',
+    hit: 'Cache hit rate: share of input read from the cache',
+    cost: 'Cost of this turn, narrator included',
+    context: 'Context window used; compact it when it gets full',
+  },
+
   // icon alt text
   alt: {
     input: 'Input tokens',
@@ -352,6 +364,17 @@ const zh: Messages = {
       desc: '完整模式下，模型新写出多少字才再更新一次旁白。',
       choice: v => `${v} 字`,
     },
+  },
+
+  tips: {
+    input: '输入：本轮新发给模型的 token，没有命中缓存的部分',
+    output: '输出：模型本轮生成的 token',
+    cacheRead: '缓存读：从提示缓存读取的输入，单价最低',
+    cacheWrite: '缓存写：本轮写入提示缓存的输入',
+    narrator: '旁白：旁白自己用掉的 token（Haiku）',
+    hit: '缓存命中率：输入里来自缓存的比例',
+    cost: '本轮花费，含旁白',
+    context: '上下文窗口已用比例，快满时需要压缩',
   },
 
   alt: {
