@@ -1,30 +1,36 @@
-# 更新日志
+# Changelog
+
+## 0.3.0
+
+- **History tab** (#3): every turn is recorded with its request, narrator summary, steps, duration, token breakdown, cost and edited files, for the session and across sessions (300 turns max). Session totals, a cost chart of recent turns, records grouped by day, "copy today's work log" as Markdown, and a two-step "compact context" button above 50% context usage.
+- **Narration placement** (#7): new `bandMode` option. `status` moves the narration to the status bar so other plugins can draw above the prompt; `off` keeps only the `/workbench` pane.
+- **i18n** (#9): English and Chinese UI and narrator prompts, picked by the new `language` option (`auto` follows Claude Code's language setting, then the system locale). README is English-first, with [README.zh-CN.md](README.zh-CN.md) in Chinese.
 
 ## 0.2.1
 
-- **本轮步骤快捷操作**（#6）：展开任意一步可复制完整命令、填入输入框；失败的步骤可一键「让 Claude 排查并重试」
-- **旁白可配置**（#5）：新增 `narratorMode`（`full` / `lite` / `off`）、`narratorIntervalSeconds`、`narratorMaterialChars` 三个配置项
-- **文档**（#8）：MIT 许可证；注明思路参考 [Wangnov/shnote](https://github.com/Wangnov/shnote)
+- **Step quick actions** (#6): expand any step to copy the full command or put it in the prompt; a failed step can be handed to Claude to investigate and retry.
+- **Configurable narrator** (#5): `narratorMode` (`full` / `lite` / `off`), `narratorIntervalSeconds` and `narratorMaterialChars`.
+- **Docs** (#8): MIT license; credit to [Wangnov/shnote](https://github.com/Wangnov/shnote) for the idea.
 
 ## 0.2.0
 
-把旁白条和步骤面板合成一个 `workbench` 插件，侧边面板改为带标签页的工作台（#2）。
+The narration band and the steps pane merge into one `workbench` plugin with a tabbed side pane (#2).
 
-- **旁白条**保留为工作台的状态栏；「步骤」「失败」「当前工具」跳到「本轮」，新增「改动 N 个文件」跳到「改动」
-- **工作台面板** `/workbench`
-  - **本轮**：每次工具调用的状态、工具、命令、耗时，点一行展开完整命令和失败原因
-  - **改动**：当前分支与 `git status` / `git diff --numstat` 汇总，单独列出 Claude 本次会话改过的文件和次数；点文件名把 `@路径` 填进输入框；「让 Claude 总结改动」「生成提交信息」快捷指令
-- 一轮结束自动刷新改动，切到改动页时数据超过 30 秒也会刷新
-- 移除 `narrator` 与 `tool-ecg` 两个独立插件（功能并入工作台，心电图的信息由「本轮」覆盖），旧代码见 tag `v0.1.0`
-- 纯函数（配色、图标、格式化、git 输出解析）拆到 `hooks/lib.ts`；引擎只允许 `$` 在入口文件内流转，所以用到 `$` 的逻辑都留在 `register.tsx`
+- The band becomes the workbench's status bar: steps, failures and the current tool open **This turn**; "N files changed" opens **Changes**.
+- `/workbench` pane:
+  - **This turn**: status, tool, command and duration of every tool call, with the full command and failure reason on click.
+  - **Changes**: branch and `git status` / `git diff --numstat` summary, files Claude edited in this session listed apart, `@path` into the prompt on click, and "summarize changes" / "draft a commit message" quick actions.
+- Changes refresh at the end of each turn, and when the tab opens with data older than 30 seconds.
+- The standalone `narrator` and `tool-ecg` plugins are removed (their features live in the workbench); the old code is at tag `v0.1.0`.
+- Pure helpers move to `hooks/lib.ts`; the engine only lets `$` flow within the entry file, so code that uses `$` stays in `register.tsx`.
 
 ## 0.1.0
 
-第一批可视化 mod，验证 Claude Code function hooks 在 Desktop Code 标签页里的横幅、侧边面板、SVG 与交互能力（#1）。
+The first visual mods, exploring what Claude Code function hooks can do in the Desktop Code tab: bands, side panes, SVG and interaction (#1).
 
-- **narrator**：输入框上方的实时旁白条
-  - 用 Haiku 把请求、工具调用和模型正在思考/书写的内容概括成一句中文旁白，一轮结束后换成总结
-  - 进度行（步数、用时、失败、当前工具），点击步数打开「步骤」侧边面板，可展开完整命令和失败原因
-  - token 行用 SVG 小图标展示输入 / 输出 / 缓存读 / 缓存写 / 旁白用量、缓存命中率、本轮花费、上下文占用
-  - 成本控制：最短间隔 8 秒，新素材满 400 字才更新，只带最近 6 步与节选
-- **tool-ecg**：`/ecg` 打开的工具调用心电图面板，滚动由 SVG 自带的 SMIL 动画完成，避免频繁重绘闪烁
+- **narrator**: a live narration band above the prompt.
+  - Haiku condenses the request, tool calls and what the model is thinking or writing into one sentence, then a summary at the end of the turn.
+  - A progress row (steps, time, failures, current tool); clicking the steps opens a steps pane with the full command and failure reason.
+  - A token row with SVG icons for input, output, cache read, cache write and narrator usage, cache hit rate, cost of the turn and context usage.
+  - Cost control: at least 8 seconds between updates, 400 new characters before updating, only the last 6 steps and excerpts per call.
+- **tool-ecg**: a tool call "ECG" pane opened with `/ecg`; scrolling runs on the SVG's own SMIL animation to avoid redraw flicker.

@@ -1,70 +1,75 @@
 # claude-workbench-mod
 
-给 [Claude Code](https://claude.com/claude-code) 的工作过程加一个可视化工作台：输入框上方是实时旁白条，侧边是查看本轮步骤和代码改动的面板。基于 Claude Code 的 function hooks（mod），在 Desktop 的 Code 标签页和终端里都能用。
+**English** | [简体中文](README.zh-CN.md)
 
-> function hooks 目前是 Claude Code 的早期功能，接口可能随版本变化。
+A workbench for [Claude Code](https://claude.com/claude-code) that shows what Claude is doing while it works: a live narration band above the prompt, and a side pane with this turn's steps, your working tree changes and a history of every turn. It is a mod built on Claude Code's function hooks and runs in the Desktop app's Code tab and in the terminal.
 
-本 mod 的思路参考了 [Wangnov/shnote](https://github.com/Wangnov/shnote)：shnote 让 AI Agent 在执行命令前写明 WHAT / WHY，让人一眼看懂它在做什么；这里沿用同样的想法，用 function hooks 在 Claude Code 界面上实时生成并展示每一步在做什么、为什么。
+> Function hooks are an early Claude Code feature; the API may change between releases.
 
-## 功能
+The idea comes from [Wangnov/shnote](https://github.com/Wangnov/shnote), which makes an AI agent state the WHAT and WHY of a command before running it so you can follow along at a glance. This mod applies the same idea inside Claude Code: function hooks generate and show, live, what each step is doing and why.
 
-### 旁白条（输入框上方）
+## Features
+
+### Narration band (above the prompt)
 
 ```
-正在读 README，了解项目定位                                ● ● ○
+Reading the README to learn what the project does          ● ● ○
 ────────────────────────────────────────────────────────
-步骤 5 步 ›   用时 1m03s   改动 3 个文件 ›   ▸ Bash · ls -la
+Step 5 ›   Time 1m03s   3 files changed ›   ▸ Bash · ls -la
 ↑ 4   ↓ 2.3k   ≡↑ 688k   ≡↓ 2.3k   ❝ 1.3k  │  ◎ 99%   $ 0.127   ▤ ▰▰▰▱▱▱▱▱▱▱ 26%
 ```
 
-- **旁白**：用 Haiku 根据你的请求、最近的工具调用和模型正在思考/书写的内容，生成一句不超过 25 字的中文说明；一轮结束后换成一句总结。右侧圆点表示工作中，结束后变成 ✓。
-- **进度**：步数、用时、失败次数、改动文件数、当前工具，都可以点击，直接打开工作台对应的标签页。
-- **token**：输入、输出、缓存读、缓存写、旁白自身用量，以及缓存命中率、本轮花费、上下文占用。Desktop 上是 SVG 小图标，终端里是 Unicode 符号；输入和输出增长时图标短暂高亮。
+- **Narration**: Haiku turns your request, the latest tool calls and what the model is thinking or writing into one short sentence about what Claude is doing and why. When the turn ends it becomes a one-line summary. The dots on the right mean Claude is working; they become ✓ when it is done.
+- **Progress**: steps, elapsed time, failures, changed files and the current tool. Each one is clickable and opens the matching workbench tab.
+- **Tokens**: input, output, cache read, cache write and the narrator's own usage, plus cache hit rate, the cost of this turn and context usage. Small SVG icons on Desktop, Unicode symbols in the terminal; the input and output icons light up when they grow.
 
-### 工作台面板（`/workbench`）
+### Workbench pane (`/workbench`)
 
-| 标签页 | 内容 |
+| Tab | What it shows |
 | --- | --- |
-| **本轮** | 这一轮每次工具调用的状态（✓ / ✕ / 运行中）、工具、命令、耗时；点一行展开完整命令和失败原因，可以复制、填入输入框，失败的步骤还能一键「让 Claude 排查并重试」 |
-| **改动** | 当前分支、工作区改动文件和增删行数；单独列出 Claude 本次会话改过的文件和次数；点文件名把 `@路径` 填进输入框；「让 Claude 总结改动」「生成提交信息」两个快捷指令 |
+| **This turn** | Every tool call in the turn with its status (✓ / ✕ / running), tool, command and duration. Click a row for the full command and the failure reason; copy it, put it in the prompt, or ask Claude to investigate and retry a failed step |
+| **Changes** | Current branch, changed files with added and removed lines, and a separate list of files Claude edited in this session. Click a file name to put `@path` in the prompt. Two quick actions: ask Claude to summarize the changes, or draft a commit message |
+| **History** | A record of every turn: time, project, request, narrator summary, steps, duration, token breakdown, cost and edited files. Session totals, a cost chart of recent turns, records grouped by day, "copy today's work log" as Markdown, and a "compact context" button once context passes 50% |
 
-改动页在每轮结束时自动刷新，也可以手动刷新。
+The Changes tab refreshes at the end of each turn. History is kept for the session and across sessions (up to 300 turns, stored locally by Claude Code).
 
-### 配置
+### Configuration
 
-在 `/config` 菜单里找到 workbench 的三个配置项修改，改完插件会自动重载；也可以直接写进 `~/.claude/settings.json`：
+Change the options in the `/config` menu (the plugin reloads on save), or put them in `~/.claude/settings.json`:
 
 ```json
 {
   "pluginConfigs": {
     "workbench": {
-      "options": { "narratorMode": "lite", "narratorIntervalSeconds": 15 }
+      "options": { "language": "en", "narratorMode": "lite", "bandMode": "status" }
     }
   }
 }
 ```
 
-| 配置项 | 默认 | 说明 |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `narratorMode` | `full` | `full`：读工具调用和模型的思考、回复；`lite`：只在工具调用时更新，不读思考；`off`：不调用模型，旁白直接显示当前步骤 |
-| `narratorIntervalSeconds` | `8` | 两次旁白更新至少间隔多少秒（3–120） |
-| `narratorMaterialChars` | `400` | `full` 模式下，模型新写出多少字才再更新一次（100–5000） |
+| `language` | `auto` | `auto` follows Claude Code's `language` setting, then the system locale (`LC_ALL` / `LANG`); `en` English; `zh` Simplified Chinese |
+| `bandMode` | `band` | `band` above the prompt; `status` one line in the status bar, so other plugins that draw above the prompt can coexist; `off` only the `/workbench` pane |
+| `narratorMode` | `full` | `full` reads tool calls plus the model's thinking and reply; `lite` updates on tool calls only; `off` makes no model calls and the band shows the current step |
+| `narratorIntervalSeconds` | `8` | Minimum seconds between two narration updates (3–120) |
+| `narratorMaterialChars` | `400` | In `full` mode, how many new characters the model writes before the narration updates again (100–5000) |
 
-### 成本
+### Cost
 
-旁白每次调用 Haiku，默认两次更新至少间隔 8 秒，新素材满 400 字才再更新，每次只带最近 6 步和思考、回复的节选，一般占每轮花费的几个百分点。旁白条里「❝」一项就是它自己用掉的 token。花费和上下文数字取自会话自己的账本，不额外调用 API。想更省就切到 `lite`，完全不想花就用 `off`。
+Each narration is one Haiku call. By default updates are at least 8 seconds apart and wait for 400 new characters, and each call carries only the last 6 steps plus short excerpts, so the narrator is usually a few percent of a turn's cost. The `❝` figure in the band is exactly what it used. Cost and context figures come from the session's own ledger and make no extra API calls. Use `lite` to spend less, or `off` to spend nothing.
 
-## 安装
+## Install
 
-需要较新版本的 Claude Code。
+Requires a recent Claude Code.
 
-**终端**
+**Terminal**
 
 ```bash
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir ./plugins/workbench
 ```
 
-**Desktop**：Desktop 启动的会话不能传命令行参数，在 `~/.claude/settings.json` 的 `env` 里用 `CLAUDE_CODE_PLUGIN_DIRS` 指定插件目录（绝对路径）：
+**Desktop**: sessions started by the Desktop app take no command-line flags. Point `CLAUDE_CODE_PLUGIN_DIRS` at the plugin (absolute path) in the `env` block of `~/.claude/settings.json`:
 
 ```json
 {
@@ -74,34 +79,29 @@ CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir ./plugins/workbench
 }
 ```
 
-注意：输入框上方只有一个横幅位置，如果同时加载了其他也画在这里的插件，只有一个能显示出来。
+There is only one slot above the prompt. If another plugin also draws there, set `bandMode` to `status`.
 
-## 开发
+## Development
 
 ```bash
-claude plugin validate plugins/workbench   # 按引擎的规则检查清单、hooks 和状态声明
-claude plugin test plugins/workbench       # 在 terminal / desktop 两个表面挂载并驱动组件
+claude plugin validate plugins/workbench   # checks the manifest, hooks and state contract the way the engine does
+claude plugin test plugins/workbench       # mounts and drives the UI on the terminal and desktop surfaces
 ```
 
-代码结构：
-
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `hooks/register.tsx` | 入口：所有 hook、旁白、git 刷新、旁白条和面板的绘制。引擎只允许 `$` 在入口文件内流转，所以用到 `$` 的逻辑都在这里 |
-| `hooks/lib.ts` | 纯函数：配色、图标、格式化、git 输出解析、提示词 |
-| `types/index.d.ts` | `$.state` 的类型约定，`claude plugin validate` 据此检查读写的状态键 |
-| `tests/workbench.test.tsx` | 用模拟的模型响应、工具调用和 git 输出驱动旁白条和面板 |
+| `hooks/register.tsx` | Entry point: every hook, the narrator, git refresh, history, and the band and pane drawing. The engine only lets `$` flow within the entry file, so everything that touches `$` lives here |
+| `hooks/lib.ts` | Pure functions: colors, icons, formatting, git output parsing, history helpers |
+| `hooks/i18n.ts` | English and Chinese strings and narrator prompts, and language detection |
+| `types/index.d.ts` | The `$.state` contract that `claude plugin validate` checks reads and writes against |
+| `tests/workbench.test.tsx` | Drives the band and pane with simulated model responses, tool calls and git output |
 
-`tsconfig.json` 继承 Claude Code 加载插件时生成的类型声明（`.claude-plugin/types/`，不入库），用编辑器或 `tsc` 做类型检查前先加载一次插件。
+`tsconfig.json` extends the type declarations Claude Code generates when it loads the plugin (`.claude-plugin/types/`, not committed); load the plugin once before type-checking in an editor or with `tsc`.
 
-## 许可
+## License
 
 [MIT](LICENSE)
 
-## 版本
+## Versions and roadmap
 
-见 [CHANGELOG.md](CHANGELOG.md)。v0.1.0 的独立插件（narrator、tool-ecg）见 tag [`v0.1.0`](../../tree/v0.1.0)。
-
-## 路线
-
-见 [issues](../../issues) 和 [里程碑](../../milestones)：v0.3.0 计划加入用量标签页、快捷指令，并处理横幅共存。
+See [CHANGELOG.md](CHANGELOG.md). The standalone v0.1.0 plugins (narrator, tool-ecg) are at tag [`v0.1.0`](../../tree/v0.1.0). Planned work is tracked in [issues](../../issues) and [milestones](../../milestones).
