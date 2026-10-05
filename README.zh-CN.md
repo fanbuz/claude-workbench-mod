@@ -35,7 +35,7 @@
 
 ### 配置
 
-在 `/config` 菜单里修改，保存后插件自动重载；也可以直接写进 `~/.claude/settings.json`：
+在工作台面板里点 **⚙ 设置**（或输入 `/workbench settings`）：每个配置项是一排按钮，点一下就保存，工作台随即重载生效。Desktop 的 Code 标签页没有 `/config` 菜单，用这个最方便。终端里同样的配置项也在 `/config` 菜单中，或者直接写进 `~/.claude/settings.json`：
 
 ```json
 {

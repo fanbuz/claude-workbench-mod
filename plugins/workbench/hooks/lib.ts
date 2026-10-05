@@ -227,6 +227,22 @@ export function narratorConfig(options: Readonly<Record<string, unknown>>): Narr
   }
 }
 
+// ── 设置面板：每个配置项给出可选值（数字项给几个常用档位） ─────────────────────────
+export const SETTING_FIELDS = [
+  { field: 'language', choices: ['auto', 'en', 'zh'] },
+  { field: 'bandMode', choices: ['band', 'status', 'off'] },
+  { field: 'narratorMode', choices: ['full', 'lite', 'off'] },
+  { field: 'narratorIntervalSeconds', choices: [5, 8, 15, 30, 60] },
+  { field: 'narratorMaterialChars', choices: [200, 400, 800, 1600] },
+] as const
+
+export type SettingField = (typeof SETTING_FIELDS)[number]['field']
+
+// `/config` 里插件配置项的键是 `<plugin>.<field>`，开发时插件名可能带 `@inline` 之类的后缀
+export function isOwnConfigKey(key: string, field: string): boolean {
+  return /^workbench(@[^.]+)?\./.test(key) && key.endsWith(`.${field}`)
+}
+
 // ── 历史 ──────────────────────────────────────────────────────────────────
 export const tokenTotal = (t: TokenTally) => t.input + t.output + t.cacheRead + t.cacheWrite
 

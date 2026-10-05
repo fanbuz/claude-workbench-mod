@@ -209,7 +209,6 @@ const quiet = (on: Parameters<Parameters<typeof test>[1]>[1]) => {
   on('session.cwd', () => ({ value: '/repo' }) as never)
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
   on('model.complete', () => ({ value: { isAnswered: true, text: 'Reading the project layout' } }) as never)
-  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
 }
 
 test('en: English UI by default when nothing points to Chinese', async ($, on) => {
@@ -239,4 +238,65 @@ test('auto: follows a Chinese language setting', async ($, on) => {
   const pane = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(PANE as never) })
   expect(await pane.find({ type: 'Button', text: /本轮/ })).toBeDefined()
   await pane.unmount()
+})
+
+test('settings: the gear opens the settings pane, a pick goes through $.config.set', { options: { narratorMode: 'lite' } }, async ($, on) => {
+  quiet(on)
+  const opened: string[] = []
+  const sets: { key: string; value: unknown }[] = []
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } } as never
+  })
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('config.list', () =>
+    ({
+      value: ['language', 'bandMode', 'narratorMode', 'narratorIntervalSeconds', 'narratorMaterialChars'].map(f => ({
+        key: `workbench@inline.${f}`,
+        label: f,
+        kind: 'choice',
+        value: '',
+        provider: { kind: 'plugin', name: 'workbench' },
+        isLocked: false,
+      })),
+    }) as never,
+  )
+  on('config.set', (_$, e) => {
+    sets.push({ key: e.key, value: e.value })
+    return { value: e.value } as never
+  })
+
+  const pane = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(PANE as never) })
+  await pane.press({ key: 'open-settings' })
+  expect(opened).toContain('workbench-settings')
+  await pane.unmount()
+
+  for (const surface of ['desktop', 'terminal', 'mobile'] as const) {
+    const settings = await $.ui.mount({
+      plugin: 'workbench',
+      surface,
+      component: 'Pane',
+      requestId: 'workbench-settings',
+      props: { title: 'Workbench settings', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40, totalRows: 0 } },
+    } as never)
+    expect(await settings.find({ type: 'Button', text: /Auto · English/ })).toBeDefined()
+    const lite = await settings.find({ key: 'set-narratorMode-lite' })
+    expect(lite?.props.variant).toBe('primary') // 当前值高亮
+    await settings.unmount()
+  }
+
+  const settings = await $.ui.mount({
+    plugin: 'workbench',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'workbench-settings',
+    props: { title: 'Workbench settings', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40, totalRows: 0 } },
+  } as never)
+  await settings.press({ key: 'set-language-zh' })
+  await settings.press({ key: 'set-narratorIntervalSeconds-15' })
+  expect(sets).toEqual([
+    { key: 'workbench@inline.language', value: 'zh' },
+    { key: 'workbench@inline.narratorIntervalSeconds', value: 15 },
+  ])
+  await settings.unmount()
 })

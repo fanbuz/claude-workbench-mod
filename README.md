@@ -35,7 +35,7 @@ The Changes tab refreshes at the end of each turn. History is kept for the sessi
 
 ### Configuration
 
-Change the options in the `/config` menu (the plugin reloads on save), or put them in `~/.claude/settings.json`:
+Click **⚙ Settings** in the workbench pane (or run `/workbench settings`): each option is a row of buttons, and a click saves it and reloads the workbench. This works in the Desktop Code tab, which has no `/config` menu. In the terminal the same options are also in `/config`, or you can put them in `~/.claude/settings.json`:
 
 ```json
 {

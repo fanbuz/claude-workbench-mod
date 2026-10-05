@@ -21,6 +21,7 @@ import {
   GLYPHS,
   ICONS,
   ICON_H,
+  SETTING_FIELDS,
   IDLE,
   OLIVE,
   SKY,
@@ -37,6 +38,7 @@ import {
   fmtTokens,
   groupByDay,
   iconWidth,
+  isOwnConfigKey,
   labelOf,
   mergeNumstat,
   money,
@@ -53,7 +55,7 @@ import {
   toolColor,
   usageChart,
 } from './lib'
-import type { IconKind, NarratorConfig } from './lib'
+import type { IconKind, NarratorConfig, SettingField } from './lib'
 import { detectLang, setLang, tr } from './i18n'
 
 // ── 状态 ──────────────────────────────────────────────────────────────────
@@ -77,6 +79,7 @@ const expandedTurnAtom = atom({ plugin: 'workbench', key: 'expandedTurn' } as co
 const confirmCompactAtom = atom({ plugin: 'workbench', key: 'confirmCompact' } as const, false)
 
 const PANE = 'workbench'
+const SETTINGS_PANE = 'workbench-settings'
 const STORE_KEY = 'history'
 const HISTORY_MAX = 300 // 跨会话最多留这么多轮
 const MODEL = 'haiku'
@@ -385,6 +388,20 @@ async function copyText($: EngineInterface, text: string, surface: RenderSurface
   $.ui.toast(r.isCopied ? tr().copied : tr().copyFailed('reason' in r ? r.reason : tr().unknownReason))
 }
 
+// ── 设置 ──────────────────────────────────────────────────────────────────
+async function openSettings($: EngineInterface) {
+  await $.ui.open({ id: SETTINGS_PANE, title: tr().settingsTitle })
+}
+
+// 和 /config 菜单走同一条路：$.config.set 写进设置，插件随后带着新值重载
+async function saveSetting($: EngineInterface, field: SettingField, value: string | number) {
+  const row = (await $.config.list()).find(r => isOwnConfigKey(r.key, field))
+  if (!row) return $.ui.toast(tr().settingMissing)
+  if (row.isLocked) return $.ui.toast(tr().settingLocked)
+  const r = await $.config.set({ key: row.key, value })
+  $.ui.toast('deny' in r && r.deny ? tr().settingFailed(r.deny) : tr().settingSaved)
+}
+
 // ── 面板 ──────────────────────────────────────────────────────────────────
 async function openPane($: EngineInterface, tab: WorkbenchTab) {
   await update($, tabAtom, () => tab)
@@ -426,7 +443,11 @@ export const register: Register = (on, options) => {
     return started
   })
 
-  on('command.run', { command: 'workbench' }, async $ => {
+  on('command.run', { command: 'workbench' }, async ($, e) => {
+    if (/^(settings|config|设置)$/i.test(e.args.trim())) {
+      await openSettings($)
+      return { text: tr().settingsTitle }
+    }
     await openPane($, await read($, tabAtom))
     return { text: tr().cmdOpened }
   })
@@ -704,7 +725,7 @@ export const register: Register = (on, options) => {
     }
 
     const header = (
-      <Box flexDirection="row" gap={1} flexWrap="wrap">
+      <Box flexDirection="row" gap={1} flexWrap="wrap" alignItems="center">
         {TABS.map(t => (
           <Button
             key={`tab-${t.id}`}
@@ -713,6 +734,10 @@ export const register: Register = (on, options) => {
             onPress={() => void switchTab($, t.id)}
           />
         ))}
+        <Box flexGrow={1} />
+        <Box key="settings-link">
+          <Button key="open-settings" plain label={tr().settingsButton} hover={{ underline: true, color: CLAY }} onPress={() => void openSettings($)} />
+        </Box>
       </Box>
     )
 
@@ -1070,6 +1095,52 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" gap={1}>
         {header}
         {body}
+      </Box>
+    )
+  })
+  // ── 设置面板：每项一排选择按钮，当前值高亮，点一下就保存 ──────────────────────
+  on('ui.render', { component: 'Pane', requestId: SETTINGS_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const m = tr()
+    const current: Record<SettingField, string> = {
+      language: config.language,
+      bandMode: config.bandMode,
+      narratorMode: config.mode,
+      narratorIntervalSeconds: String(config.minGapMs / 1000),
+      narratorMaterialChars: String(config.materialStep),
+    }
+    const resolved = m.langName[m.lang]
+
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text bold>{m.settingsTitle}</Text>
+        {SETTING_FIELDS.map(({ field, choices }) => {
+          const meta = m.fields[field]!
+          return (
+            <Box key={`setting-${field}`} flexDirection="column">
+              <Text bold>{meta.title}</Text>
+              <Text dimColor wrap="wrap">
+                {meta.desc}
+              </Text>
+              <Box flexDirection="row" gap={1} flexWrap="wrap">
+                {choices.map(choice => {
+                  const value = String(choice)
+                  return (
+                    <Button
+                      key={`set-${field}-${value}`}
+                      label={meta.choice(value, resolved)}
+                      variant={current[field] === value ? 'primary' : 'secondary'}
+                      onPress={() => (current[field] === value ? undefined : void saveSetting($, field, choice))}
+                    />
+                  )
+                })}
+              </Box>
+            </Box>
+          )
+        })}
+        <Text dimColor wrap="wrap">
+          {m.settingsNote}
+        </Text>
       </Box>
     )
   })

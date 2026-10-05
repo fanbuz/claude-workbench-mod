@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Settings pane** (#12): a "⚙ Settings" button in the workbench pane (or `/workbench settings`) opens a pane where each option is a row of choice buttons; a click saves it through `$.config.set`, the same path as `/config`, so options can be changed in the Desktop Code tab too.
+
 ## 0.3.0
 
 - **History tab** (#3): every turn is recorded with its request, narrator summary, steps, duration, token breakdown, cost and edited files, for the session and across sessions (300 turns max). Session totals, a cost chart of recent turns, records grouped by day, "copy today's work log" as Markdown, and a two-step "compact context" button above 50% context usage.

@@ -142,6 +142,43 @@ const en = {
   commitPrompt:
     'Write a commit message for the current git working tree changes (git status and git diff): a summary line of at most 50 characters, a blank line, then a bulleted explanation. Only give the message; do not run git commit.',
 
+  // settings pane
+  settingsButton: '⚙ Settings',
+  settingsTitle: 'Workbench settings',
+  settingsNote: 'Saved to your Claude Code settings (pluginConfigs); the workbench reloads to apply.',
+  settingSaved: 'Saved',
+  settingFailed: (reason: string) => `Not saved: ${reason}`,
+  settingMissing: 'This option is not available in this session',
+  settingLocked: 'This option is locked by managed settings',
+  langName: { en: 'English', zh: '中文' } as Record<Lang, string>,
+  fields: {
+    language: {
+      title: 'Language',
+      desc: "Auto follows Claude Code's language setting, then the system locale.",
+      choice: (v: string, resolved: string) => (v === 'auto' ? `Auto · ${resolved}` : v === 'zh' ? '中文' : 'English'),
+    },
+    bandMode: {
+      title: 'Narration placement',
+      desc: 'Status bar frees the slot above the prompt for other plugins.',
+      choice: (v: string) => (v === 'band' ? 'Above the prompt' : v === 'status' ? 'Status bar' : 'Off'),
+    },
+    narratorMode: {
+      title: 'Narrator',
+      desc: 'Lite updates on tool calls only; Off makes no model calls.',
+      choice: (v: string) => (v === 'full' ? 'Full' : v === 'lite' ? 'Lite' : 'Off'),
+    },
+    narratorIntervalSeconds: {
+      title: 'Narrator interval',
+      desc: 'Minimum time between two narration updates.',
+      choice: (v: string) => `${v}s`,
+    },
+    narratorMaterialChars: {
+      title: 'New text before an update',
+      desc: 'In Full mode, how much new text the model writes before the narration updates.',
+      choice: (v: string) => `${v} chars`,
+    },
+  } as Record<string, { title: string; desc: string; choice: (v: string, resolved: string) => string }>,
+
   // icon alt text
   alt: {
     input: 'Input tokens',
@@ -280,6 +317,42 @@ const zh: Messages = {
     `上一轮里这一步失败了：${tool}\n\n${detail}\n\n报错：${error ?? '（无输出）'}\n\n` + '先说明失败的原因，再修正后重试这一步。',
   commitPrompt:
     '根据当前 git 工作区的改动（git status 和 git diff），写一条提交信息：第一行不超过 50 字的摘要，空一行后分条说明。只给出提交信息，不要执行 git commit。',
+
+  settingsButton: '⚙ 设置',
+  settingsTitle: '工作台设置',
+  settingsNote: '保存在 Claude Code 的设置（pluginConfigs）里，工作台会自动重载生效。',
+  settingSaved: '已保存',
+  settingFailed: reason => `没有保存：${reason}`,
+  settingMissing: '这个会话里没有这个配置项',
+  settingLocked: '这个配置项被托管设置锁定了',
+  langName: { en: 'English', zh: '中文' },
+  fields: {
+    language: {
+      title: '语言',
+      desc: '自动：先看 Claude Code 的语言设置，再看系统语言。',
+      choice: (v, resolved) => (v === 'auto' ? `自动 · ${resolved}` : v === 'zh' ? '中文' : 'English'),
+    },
+    bandMode: {
+      title: '旁白位置',
+      desc: '放到状态栏时，输入框上方的位置留给其他插件。',
+      choice: v => (v === 'band' ? '输入框上方' : v === 'status' ? '状态栏' : '关闭'),
+    },
+    narratorMode: {
+      title: '旁白模式',
+      desc: '节能：只在工具调用时更新；关闭：不调用模型。',
+      choice: v => (v === 'full' ? '完整' : v === 'lite' ? '节能' : '关闭'),
+    },
+    narratorIntervalSeconds: {
+      title: '旁白最短间隔',
+      desc: '两次旁白更新至少间隔多久。',
+      choice: v => `${v} 秒`,
+    },
+    narratorMaterialChars: {
+      title: '触发更新的新内容',
+      desc: '完整模式下，模型新写出多少字才再更新一次旁白。',
+      choice: v => `${v} 字`,
+    },
+  },
 
   alt: {
     input: '输入 token',
