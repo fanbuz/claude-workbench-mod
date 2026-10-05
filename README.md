@@ -4,6 +4,8 @@
 
 > function hooks 目前是 Claude Code 的早期功能，接口可能随版本变化。
 
+本 mod 的思路参考了 [Wangnov/shnote](https://github.com/Wangnov/shnote)：shnote 让 AI Agent 在执行命令前写明 WHAT / WHY，让人一眼看懂它在做什么；这里沿用同样的想法，用 function hooks 在 Claude Code 界面上实时生成并展示每一步在做什么、为什么。
+
 ## 功能
 
 ### 旁白条（输入框上方）
@@ -71,6 +73,10 @@ claude plugin test plugins/workbench       # 在 terminal / desktop 两个表面
 | `tests/workbench.test.tsx` | 用模拟的模型响应、工具调用和 git 输出驱动旁白条和面板 |
 
 `tsconfig.json` 继承 Claude Code 加载插件时生成的类型声明（`.claude-plugin/types/`，不入库），用编辑器或 `tsc` 做类型检查前先加载一次插件。
+
+## 许可
+
+[MIT](LICENSE)
 
 ## 版本
 
