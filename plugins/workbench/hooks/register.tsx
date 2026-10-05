@@ -21,6 +21,8 @@ import {
   GLYPHS,
   ICONS,
   ICON_H,
+  DOTS_H,
+  DOTS_W,
   TIP_BG,
   TIP_FG,
   SETTING_FIELDS,
@@ -35,6 +37,7 @@ import {
   dayLabel,
   dayLog,
   detailOf,
+  dotsSvg,
   duration,
   editedPath,
   errorOf,
@@ -88,8 +91,9 @@ const HISTORY_MAX = 300 // 跨会话最多留这么多轮
 const MODEL = 'haiku'
 
 const TICK_MS = 1000
-const SPIN_MS = 450 // 圆点动画的帧间隔：慢一点，看着不累
-const DOT_FRAMES = [1, 2, 3] // 至少亮一颗，不会出现全灭
+// 横幅里的用时多久刷新一次。每次重绘都会替换按钮，刷得太勤点击会落空，所以放慢到 5 秒，
+// 其余显示都只随真实变化（步骤、token、旁白）更新
+const CLOCK_MS = 5000
 const FLASH_MS = 1500 // token 增长后图标高亮多久
 const TAIL = 800
 const GIT_STALE_MS = 30_000
@@ -435,8 +439,8 @@ export const register: Register = (on, options) => {
     if (config.bandMode !== 'status') $.ui.status(undefined)
     void refreshGit($)
 
-    // 圆点动画的帧（也顺带让耗时走起来），只在工作中转
-    $.clock.every(SPIN_MS, () => {
+    // 只为让用时走起来，工作中每 5 秒一次；空闲时完全不重绘
+    $.clock.every(CLOCK_MS, () => {
       if (isWorking) void update($, tickAtom, n => n + 1)
     })
     // 每秒看一次要不要生成新旁白
@@ -562,7 +566,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const line = await read($, lineAtom)
     if (config.bandMode !== 'band' || e.props.hasSurvey || !line) return next(e)
-    const frame = await read($, tickAtom) // 订阅动画帧
+    await read($, tickAtom) // 订阅慢速时钟，让用时走起来
     const gitState = await read($, gitAtom)
 
     const resolved = $.ui.resolve(e)
@@ -571,7 +575,6 @@ export const register: Register = (on, options) => {
     const now = Date.now()
     const isWorkingNow = line.phase === 'working'
     const elapsed = duration((line.endedAt ?? now) - line.startedAt)
-    const lit = DOT_FRAMES[frame % DOT_FRAMES.length]!
     const color = isWorkingNow ? CLAY : line.phase === 'done' ? CLAY_MUTED : STONE
 
     const t = line.tokens
@@ -636,11 +639,11 @@ export const register: Register = (on, options) => {
           </Box>
           <Box width={6} flexShrink={0} justifyContent="flex-end">
             {isWorkingNow ? (
-              <Text>
-                {[0, 1, 2].map(i => (
-                  <Text color={i < lit ? CLAY : CLOUD}>{i === 0 ? '●' : ' ●'}</Text>
-                ))}
-              </Text>
+              Svg ? (
+                <Svg source={dotsSvg(CLAY, CLOUD)} alt={tr().working} width={DOTS_W} height={DOTS_H} />
+              ) : (
+                <Text color={CLAY}>● ● ●</Text>
+              )
             ) : (
               <Text bold color={color}>
                 {line.phase === 'done' ? '✓' : '✕'}
@@ -772,7 +775,6 @@ export const register: Register = (on, options) => {
     // ── 本轮 ──
     const turnView = async () => {
       const expanded = await read($, expandedAtom)
-      await read($, tickAtom) // 运行中的步骤让耗时走起来
       const { request: req, items } = stepsState
       const isWorkingNow = line?.phase === 'working'
       const okCount = items.filter(v => v.ok === true).length

@@ -170,6 +170,19 @@ export function cellWidth(text: string): number {
 export const TIP_BG = '#3D3A35'
 export const TIP_FG = '#F5F3EF'
 
+// 工作中的三个圆点：动画写在 SVG 里（SMIL），由图片自己播放，插件不用为它重绘。
+// 横幅一重绘按钮就会被替换，点击容易落空，所以周期性的动画不能靠重绘来驱动
+export const DOTS_W = 30
+export const DOTS_H = 10
+
+export function dotsSvg(on: string, off: string): string {
+  const dot = (cx: number, begin: number) =>
+    `<circle cx="${cx}" cy="5" r="3.5" fill="${off}">` +
+    `<animate attributeName="fill" values="${off};${on};${on};${off}" keyTimes="0;0.2;0.6;1" dur="1.5s" begin="${begin}s" repeatCount="indefinite"/>` +
+    `</circle>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${DOTS_W}" height="${DOTS_H}" viewBox="0 0 ${DOTS_W} ${DOTS_H}">${dot(5, 0)}${dot(15, 0.3)}${dot(25, 0.6)}</svg>`
+}
+
 export const iconWidth = (kind: IconKind) => (kind.startsWith('cache') ? (ICON_H * 22) / 16 : ICON_H)
 
 // ── git ───────────────────────────────────────────────────────────────────

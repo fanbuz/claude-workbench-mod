@@ -21,6 +21,7 @@ const en = {
 
   // narration fixed texts
   understanding: 'Reading your request',
+  working: 'Working',
   running: (current: string) => `Running ${current}`,
   aborted: 'This turn was interrupted',
   answered: 'Answered directly',
@@ -219,6 +220,7 @@ const zh: Messages = {
   cmdOpened: '工作台已打开。',
 
   understanding: '正在理解你的请求',
+  working: '工作中',
   running: current => `正在运行 ${current}`,
   aborted: '这一轮被中断了',
   answered: '已直接回复',
