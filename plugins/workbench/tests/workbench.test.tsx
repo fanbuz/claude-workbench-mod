@@ -161,3 +161,41 @@ test('off 模式不调用模型，旁白显示当前步骤', { options: { narrat
   await band.unmount()
   expect(modelCalls).toBe(0)
 })
+
+test('每轮结束记进历史，历史页显示汇总并能复制今天的工作记录', async ($, on) => {
+  const copied: string[] = []
+  const stored: Record<string, unknown> = {}
+  on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
+  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 62 }, rateLimits: [], cost: { usd: 0.2 } } }) as never)
+  on('session.cwd', () => ({ value: '/work/demo-app' }) as never)
+  on('session.id', () => ({ value: 's1' }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('store.get', (_$, e) => ({ value: stored[e.key] }) as never)
+  on('store.set', (_$, e) => {
+    stored[e.key] = e.value
+    return { value: undefined } as never
+  })
+  on('model.complete', () => ({ value: { isAnswered: true, text: '改好了登录页的表单校验' } }) as never)
+  on('ui.copy', (_$, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } } as never
+  })
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+
+  await $.prompt.submit({ text: '修一下登录页的表单校验' })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/demo-app/src/login.tsx', old_string: 'a', new_string: 'b' } as never)
+  await $.turn.complete({ turnId: 't1', answer: '已修复表单校验', durationMs: 1000, isAborted: false } as never)
+  await new Promise(r => setTimeout(r, 20)) // 等收尾写入历史
+
+  expect(Array.isArray(stored['history'])).toBe(true)
+  const pane = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(PANE as never) })
+  await pane.press({ key: 'tab-history' })
+  expect(await pane.find({ type: 'Button', text: /改好了登录页的表单校验/ })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: /压缩上下文/ })).toBeDefined() // 上下文 62% ≥ 50%
+  await pane.press({ key: 'copy-day' })
+  expect(copied[0]).toContain('[demo-app] 改好了登录页的表单校验')
+  await pane.unmount()
+})

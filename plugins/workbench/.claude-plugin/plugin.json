@@ -1,9 +1,20 @@
 {
   "name": "workbench",
-  "version": "0.2.1",
-  "description": "工作台：输入框上方的实时旁白条，加一个「本轮步骤 / 改动」两栏的侧边面板",
+  "version": "0.3.0",
+  "description": "工作台：输入框上方的实时旁白条，加一个「本轮 / 改动 / 历史」三栏的侧边面板",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "bandMode": {
+      "type": "string",
+      "title": "旁白显示位置",
+      "description": "band：输入框上方的横幅；status：状态栏一行，不占横幅位置，可与其他横幅插件共存；off：都不显示，只用 /workbench 面板",
+      "default": "band",
+      "options": [
+        "band",
+        "status",
+        "off"
+      ]
+    },
     "narratorMode": {
       "type": "string",
       "title": "旁白模式",

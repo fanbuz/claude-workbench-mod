@@ -1,7 +1,7 @@
 // 工作台的纯函数：配色、格式化、图标、git 输出解析、提示词。
 // 这里不碰 $（引擎只允许 $ 在入口文件里流转），入口文件 register.tsx 调用它们。
 
-import type { GitFile, TokenTally } from '../types'
+import type { GitFile, TokenTally, TurnRecord } from '../types'
 
 // ── 配色：Claude 品牌色 + 中间调辅助色，浅色和深色背景上都看得清 ──────────────
 export const CLAY = '#D97757' // Claude 的陶土橙
@@ -250,7 +250,9 @@ export function retryPrompt(tool: string, detail: string, error: string | null):
 // ── 配置（plugin.json 的 userConfig）──────────────────────────────────────────
 export type NarratorMode = 'full' | 'lite' | 'off'
 
-export type NarratorConfig = { mode: NarratorMode; minGapMs: number; materialStep: number }
+export type BandMode = 'band' | 'status' | 'off'
+
+export type NarratorConfig = { mode: NarratorMode; bandMode: BandMode; minGapMs: number; materialStep: number }
 
 function numberOption(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
@@ -259,11 +261,82 @@ function numberOption(value: unknown, min: number, max: number, fallback: number
 
 export function narratorConfig(options: Readonly<Record<string, unknown>>): NarratorConfig {
   const mode = options['narratorMode']
+  const band = options['bandMode']
   return {
     mode: mode === 'lite' || mode === 'off' ? mode : 'full',
+    bandMode: band === 'status' || band === 'off' ? band : 'band',
     minGapMs: numberOption(options['narratorIntervalSeconds'], 3, 120, 8) * 1000,
     materialStep: numberOption(options['narratorMaterialChars'], 100, 5000, 400),
   }
+}
+
+// ── 历史 ──────────────────────────────────────────────────────────────────
+export const tokenTotal = (t: TokenTally) => t.input + t.output + t.cacheRead + t.cacheWrite
+
+export function money(usd: number): string {
+  return `$${usd.toFixed(usd < 1 ? 3 : 2)}`
+}
+
+function dayKey(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function dayLabel(ms: number, now = Date.now()): string {
+  if (dayKey(ms) === dayKey(now)) return '今天'
+  if (dayKey(ms) === dayKey(now - 86_400_000)) return '昨天'
+  const d = new Date(ms)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+// 按天分组，组内和组间都是新的在前
+export function groupByDay(records: readonly TurnRecord[]): { label: string; items: TurnRecord[] }[] {
+  const groups: { key: string; label: string; items: TurnRecord[] }[] = []
+  for (const r of [...records].sort((a, b) => b.startedAt - a.startedAt)) {
+    const key = dayKey(r.startedAt)
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) last.items.push(r)
+    else groups.push({ key, label: dayLabel(r.startedAt), items: [r] })
+  }
+  return groups
+}
+
+export function recordMeta(r: TurnRecord): string {
+  return [`${r.steps} 步`, duration(r.endedAt - r.startedAt), r.costUsd !== null ? money(r.costUsd) : null].filter(Boolean).join(' · ')
+}
+
+// 「复制今天的工作记录」：一行一轮的 Markdown
+export function dayLog(records: readonly TurnRecord[], now = Date.now()): string {
+  const today = records.filter(r => dayKey(r.startedAt) === dayKey(now)).sort((a, b) => a.startedAt - b.startedAt)
+  const lines = today.map(r => `- ${clockTime(r.startedAt)} ${r.project ? `[${r.project}] ` : ''}${r.summary}（${recordMeta(r)}）`)
+  return [`## ${dayKey(now)} 工作记录`, '', ...lines].join('\n')
+}
+
+// 最近若干轮的花费柱状图（没有花费数据时改用 token 总量）。静态 SVG：只在新增记录时变化
+export function usageChart(records: readonly TurnRecord[], width: number, height: number): string {
+  const list = [...records].sort((a, b) => a.startedAt - b.startedAt).slice(-24)
+  const useCost = list.every(r => r.costUsd !== null)
+  const values = list.map(r => (useCost ? (r.costUsd ?? 0) : tokenTotal(r.tokens)))
+  const max = Math.max(...values, useCost ? 0.001 : 1)
+  const top = 16
+  const gap = 4
+  const barW = list.length ? Math.max(4, Math.min(28, (width - gap * (list.length - 1)) / list.length)) : 0
+  const bars = list
+    .map((r, i) => {
+      const h = Math.max(2, ((values[i] ?? 0) / max) * (height - top - 2))
+      const x = i * (barW + gap)
+      const color = i === list.length - 1 ? CLAY : r.errors > 0 ? AMBER : CLAY_MUTED
+      return `<rect x="${x.toFixed(1)}" y="${(height - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}"/>`
+    })
+    .join('')
+  const label = useCost ? `最高 ${money(max)} / 轮` : `最高 ${fmtTokens(max)} token / 轮`
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<text x="0" y="11" font-size="11" fill="${STONE}" font-family="-apple-system, 'Segoe UI', sans-serif">${label}</text>` +
+    `<line x1="0" y1="${height - 0.5}" x2="${width}" y2="${height - 0.5}" stroke="${CLOUD}" stroke-width="1"/>` +
+    bars +
+    `</svg>`
+  )
 }
 
 export const COMMIT_PROMPT =

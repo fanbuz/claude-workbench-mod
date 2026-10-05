@@ -49,7 +49,26 @@ export type GitSnapshot = {
   updatedAt: number | null
 }
 
-export type WorkbenchTab = 'turn' | 'changes'
+// ── 历史 ────────────────────────────────────────────────
+// 一轮工作的记录：本会话的放在 $.state，跨会话的放在 $.store
+export type TurnRecord = {
+  id: string // 这一轮开始的时刻
+  sessionId: string
+  project: string // 会话目录的最后一段
+  startedAt: number
+  endedAt: number
+  request: string // 最多 300 字
+  summary: string // 旁白的收尾总结
+  phase: NarrationPhase
+  steps: number
+  errors: number
+  tokens: TokenTally
+  narratorTokens: number
+  costUsd: number | null
+  files: string[] // 这一轮 Claude 改过的文件名
+}
+
+export type WorkbenchTab = 'turn' | 'changes' | 'history'
 
 declare module 'claude-code' {
   interface PluginState {
@@ -61,6 +80,9 @@ declare module 'claude-code' {
       tab: WorkbenchTab
       touched: TouchedFile[]
       git: GitSnapshot
+      history: TurnRecord[]
+      expandedTurn: string | null
+      confirmCompact: boolean
     }
   }
 }

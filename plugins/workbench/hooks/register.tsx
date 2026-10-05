@@ -8,6 +8,7 @@ import type {
   NarrationPhase,
   StepView,
   TouchedFile,
+  TurnRecord,
   TurnSteps,
   WorkbenchTab,
 } from '../types'
@@ -31,17 +32,22 @@ import {
   ZERO,
   clip,
   clockTime,
+  dayLabel,
+  dayLog,
   detailOf,
   duration,
   editedPath,
   errorOf,
   fmtTokens,
+  groupByDay,
   iconWidth,
   labelOf,
   mergeNumstat,
+  money,
   narratorConfig,
   oneLine,
   parseStatus,
+  recordMeta,
   retryPrompt,
   shortLabel,
   shortTool,
@@ -50,7 +56,9 @@ import {
   statusLabel,
   stepTime,
   summaryPrompt,
+  tokenTotal,
   toolColor,
+  usageChart,
 } from './lib'
 import type { IconKind, NarratorConfig } from './lib'
 
@@ -70,7 +78,13 @@ const gitAtom = atom({ plugin: 'workbench', key: 'git' } as const, {
   error: null,
   updatedAt: null,
 } as GitSnapshot)
+const historyAtom = atom({ plugin: 'workbench', key: 'history' } as const, [] as TurnRecord[])
+const expandedTurnAtom = atom({ plugin: 'workbench', key: 'expandedTurn' } as const, null as string | null)
+const confirmCompactAtom = atom({ plugin: 'workbench', key: 'confirmCompact' } as const, false)
+
 const PANE = 'workbench'
+const STORE_KEY = 'history'
+const HISTORY_MAX = 300 // 跨会话最多留这么多轮
 const MODEL = 'haiku'
 
 const TICK_MS = 1000
@@ -84,6 +98,7 @@ const MAX_ROWS = 40
 const TABS: { id: WorkbenchTab; label: string }[] = [
   { id: 'turn', label: '本轮' },
   { id: 'changes', label: '改动' },
+  { id: 'history', label: '历史' },
 ]
 
 // ── 这一轮的进度：模块变量，热重载时从头开始 ─────────────────────────────────
@@ -102,6 +117,8 @@ let material = 0
 let narratedMaterial = 0
 let isIntroPending = false // 刚发出请求，还没说第一句
 let costAtStart: number | null = null
+let turnFiles = new Set<string>() // 这一轮 Claude 改过的文件
+let sessionId = ''
 // 旁白配置：register 时从插件配置读入，配置一改模块就会重载
 let config: NarratorConfig = narratorConfig({})
 
@@ -205,6 +222,7 @@ async function narrateLive($: EngineInterface) {
     if (r.isAnswered && isWorking) {
       const text = oneLine(r.text)
       if (text) await update($, lineAtom, l => (l && l.phase === 'working' ? { ...l, text } : l))
+      await syncStatus($)
     }
   } finally {
     isInFlight = false
@@ -214,38 +232,101 @@ async function narrateLive($: EngineInterface) {
 
 async function narrateDone($: EngineInterface, reply: string, isAborted: boolean) {
   const endedAt = Date.now()
-  await update($, lineAtom, l =>
-    l ? { ...l, phase: (isAborted ? 'interrupted' : 'done') as NarrationPhase, current: '', endedAt, isThinking: !isAborted } : l,
-  )
-  if (isAborted) {
-    await update($, lineAtom, l => (l ? { ...l, text: '这一轮被中断了' } : l))
-    return
-  }
   // 关闭了模型旁白，或没调用工具的简短问答，都不值得再花一次模型调用
-  if (config.mode === 'off' || (steps.length === 0 && reply.length < 200)) {
-    const text = steps.length === 0 ? '已直接回复' : `这一轮完成了，共 ${steps.length} 步`
-    await update($, lineAtom, l => (l ? { ...l, text, isThinking: false } : l))
+  const isQuick = config.mode === 'off' || (steps.length === 0 && reply.length < 200)
+  await update($, lineAtom, l =>
+    l
+      ? { ...l, phase: (isAborted ? 'interrupted' : 'done') as NarrationPhase, current: '', endedAt, isThinking: !isAborted && !isQuick }
+      : l,
+  )
+  let text = ''
+  if (isAborted) text = '这一轮被中断了'
+  else if (isQuick) text = steps.length === 0 ? '已直接回复' : `这一轮完成了，共 ${steps.length} 步`
+  else {
+    try {
+      const r = await $.model.complete({
+        model: MODEL,
+        system: SYSTEM_DONE,
+        prompt:
+          `用户请求：\n${request.slice(0, 600)}\n\n做过的步骤（共 ${steps.length} 步，最近的在后）：\n${describe()}` +
+          `\n\n助手最后的回复（节选）：\n${reply.slice(0, 1200)}`,
+        maxTokens: 120,
+        effort: 'low',
+        timeoutMs: 15_000,
+      })
+      await addNarratorUsage($, r.usage)
+      text = r.isAnswered ? oneLine(r.text) : ''
+    } catch {
+      // 模型没答上来就用兜底文案，下面照常收尾
+    }
+  }
+  await refreshUsage($).catch(() => undefined)
+  // 无论模型答没答、出没出错，都收起"更新中"，并把这一轮记进历史
+  await update($, lineAtom, l => (l ? { ...l, text: text || '这一轮完成了', isThinking: false } : l))
+  await recordTurn($)
+  await syncStatus($)
+}
+
+// ── 历史 ──────────────────────────────────────────────────────────────────
+async function recordTurn($: EngineInterface) {
+  const l = await read($, lineAtom)
+  if (!l) return
+  const cwd = await $.session.cwd().catch(() => '')
+  const record: TurnRecord = {
+    id: String(l.startedAt),
+    sessionId,
+    project: cwd.split('/').filter(Boolean).pop() ?? '',
+    startedAt: l.startedAt,
+    endedAt: l.endedAt ?? Date.now(),
+    request: clip(request.replace(/\s+/g, ' ').trim(), 300),
+    summary: l.text,
+    phase: l.phase,
+    steps: l.steps,
+    errors: l.errors,
+    tokens: l.tokens,
+    narratorTokens: l.narratorTokens,
+    costUsd: l.costUsd,
+    files: [...turnFiles].map(p => splitPath(p).name).slice(0, 20),
+  }
+  const merge = (list: readonly TurnRecord[]) => [record, ...list.filter(r => r.id !== record.id)].slice(0, HISTORY_MAX)
+  await update($, historyAtom, merge)
+  const stored = await $.store.get(STORE_KEY).catch(() => undefined)
+  await $.store.set(STORE_KEY, merge(Array.isArray(stored) ? (stored as TurnRecord[]) : [])).catch(() => undefined)
+}
+
+async function loadHistory($: EngineInterface) {
+  const stored = await $.store.get(STORE_KEY).catch(() => undefined)
+  if (!Array.isArray(stored)) return
+  await update($, historyAtom, list => {
+    const ids = new Set(list.map(r => r.id))
+    return [...list, ...(stored as TurnRecord[]).filter(r => !ids.has(r.id))].sort((a, b) => b.startedAt - a.startedAt).slice(0, HISTORY_MAX)
+  })
+}
+
+async function copyDayLog($: EngineInterface, surface: RenderSurface) {
+  const log = dayLog(await read($, historyAtom))
+  await copyText($, log, surface)
+}
+
+async function compactContext($: EngineInterface) {
+  if (!(await read($, confirmCompactAtom))) {
+    await update($, confirmCompactAtom, () => true)
+    $.clock.after(5000, () => void update($, confirmCompactAtom, () => false))
     return
   }
-  let text = ''
-  try {
-    const r = await $.model.complete({
-      model: MODEL,
-      system: SYSTEM_DONE,
-      prompt:
-        `用户请求：\n${request.slice(0, 600)}\n\n做过的步骤（共 ${steps.length} 步，最近的在后）：\n${describe()}` +
-        `\n\n助手最后的回复（节选）：\n${reply.slice(0, 1200)}`,
-      maxTokens: 120,
-      effort: 'low',
-      timeoutMs: 15_000,
-    })
-    await addNarratorUsage($, r.usage)
-    text = r.isAnswered ? oneLine(r.text) : ''
-  } finally {
-    await refreshUsage($).catch(() => undefined)
-    // 无论模型答没答、出没出错，都收起"更新中"
-    await update($, lineAtom, l => (l ? { ...l, text: text || '这一轮完成了', isThinking: false } : l))
-  }
+  await update($, confirmCompactAtom, () => false)
+  const r = await $.session.compact()
+  $.ui.toast('skip' in r && r.skip ? `没有压缩：${r.skip}` : '上下文已压缩')
+  await refreshUsage($).catch(() => undefined)
+}
+
+// ── 状态栏：bandMode 为 status 时，旁白不占输入框上方，改显示在这里 ─────────────
+async function syncStatus($: EngineInterface) {
+  if (config.bandMode !== 'status') return
+  const l = await read($, lineAtom)
+  if (!l) return $.ui.status(undefined)
+  const mark = l.phase === 'working' ? '●' : l.phase === 'done' ? '✓' : '✕'
+  $.ui.status(`${mark} ${l.text} · ${l.steps} 步`)
 }
 
 // 热重载会丢掉旧模块里还没跑完的旁白请求：新模块加载时把它留下的半截状态收尾
@@ -327,7 +408,10 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await settleStale($)
-    await $.command.register({ name: 'workbench', description: '打开工作台（本轮步骤 / 改动）' })
+    await $.command.register({ name: 'workbench', description: '打开工作台（本轮步骤 / 改动 / 历史）' })
+    sessionId = await $.session.id().catch(() => '')
+    void loadHistory($)
+    if (config.bandMode !== 'status') $.ui.status(undefined)
     void refreshGit($)
 
     // 圆点动画的帧（也顺带让耗时走起来），只在工作中转
@@ -357,6 +441,7 @@ export const register: Register = (on, options) => {
     narratedMaterial = 0
     isIntroPending = true
     isWorking = true
+    turnFiles = new Set()
     await update($, stepsAtom, () => ({ request: e.text.replace(/\s+/g, ' ').slice(0, 200), items: [] }))
     await update($, expandedAtom, () => null)
     costAtStart = await $.session.usage().then(
@@ -378,6 +463,7 @@ export const register: Register = (on, options) => {
       contextPercent: null,
       changedAt: ZERO,
     }))
+    await syncStatus($)
     return next(e)
   })
 
@@ -403,6 +489,7 @@ export const register: Register = (on, options) => {
     await update($, lineAtom, l =>
       l ? { ...l, current, steps: steps.length, text: config.mode === 'off' && isWorking ? `正在运行 ${current}` : l.text } : l,
     )
+    await syncStatus($)
 
     let ok = false
     let error: string | null = '执行被中断'
@@ -423,6 +510,7 @@ export const register: Register = (on, options) => {
       // 记下 Claude 改过的文件，改动页据此标出"Claude 改的"
       const path = ok ? editedPath(e.tool, args) : null
       if (path) {
+        turnFiles.add(path)
         const now = Date.now()
         await update($, touchedAtom, list => {
           const hit = list.find(f => f.path === path)
@@ -448,7 +536,7 @@ export const register: Register = (on, options) => {
   // ── 输入框上方的旁白条 ──────────────────────────────────────────────────
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const line = await read($, lineAtom)
-    if (e.props.hasSurvey || !line) return next(e)
+    if (config.bandMode !== 'band' || e.props.hasSurvey || !line) return next(e)
     const frame = await read($, tickAtom) // 订阅动画帧
     const gitState = await read($, gitAtom)
 
@@ -611,6 +699,7 @@ export const register: Register = (on, options) => {
     const counts: Record<WorkbenchTab, number> = {
       turn: stepsState.items.length,
       changes: gitState.files.length,
+      history: (await read($, historyAtom)).filter(r => r.sessionId === sessionId).length,
     }
 
     const header = (
@@ -844,7 +933,137 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const body = tab === 'turn' ? await turnView() : await changesView()
+    // ── 历史 ──
+    const historyView = async () => {
+      const history = await read($, historyAtom)
+      const expanded = await read($, expandedTurnAtom)
+      const confirm = await read($, confirmCompactAtom)
+      const mine = history.filter(r => r.sessionId === sessionId)
+      const cost = mine.reduce((s, r) => s + (r.costUsd ?? 0), 0)
+      const hasCost = mine.some(r => r.costUsd !== null)
+      const tokens = mine.reduce((s, r) => s + tokenTotal(r.tokens), 0)
+      const spent = mine.reduce((s, r) => s + (r.endedAt - r.startedAt), 0)
+      const ctx = line?.contextPercent ?? null
+      const ctxColor = ctx === null ? CLOUD : ctx >= 85 ? ALERT : ctx >= 60 ? AMBER : CLAY_MUTED
+      const ctxFilled = ctx === null ? 0 : Math.max(0, Math.min(10, Math.round(ctx / 10)))
+      const resolved = $.ui.resolve(e)
+      const Svg = 'Svg' in resolved ? resolved.Svg : null
+      const chartW = Math.max(240, Math.min(720, e.props.bodyColumns * 7))
+
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Box flexDirection="column">
+            <Text bold>本会话</Text>
+            <Text wrap="truncate-end">
+              <Text bold>{mine.length}</Text>
+              <Text dimColor> 轮 · 用时 </Text>
+              <Text bold>{duration(spent)}</Text>
+              <Text dimColor> · token </Text>
+              <Text bold>{fmtTokens(tokens)}</Text>
+              {hasCost && <Text dimColor> · 花费 </Text>}
+              {hasCost && <Text bold>{money(cost)}</Text>}
+            </Text>
+            {ctx !== null && (
+              <Box flexDirection="row" gap={1} alignItems="center">
+                <Text>
+                  <Text dimColor>上下文 </Text>
+                  <Text color={ctxColor}>{'▰'.repeat(ctxFilled)}</Text>
+                  <Text color={IDLE}>{'▱'.repeat(10 - ctxFilled)}</Text>
+                  <Text bold color={ctxColor}>
+                    {' '}
+                    {Math.round(ctx)}%
+                  </Text>
+                </Text>
+                {ctx >= 50 && (
+                  <Button
+                    key="compact"
+                    variant={confirm ? 'primary' : 'secondary'}
+                    label={confirm ? '再点一次确认压缩' : '压缩上下文'}
+                    onPress={() => void compactContext($)}
+                  />
+                )}
+              </Box>
+            )}
+          </Box>
+
+          {history.length > 1 && Svg && (
+            <Svg source={usageChart(history, chartW, 64)} alt={`最近 ${Math.min(24, history.length)} 轮的花费`} width={chartW} height={64} />
+          )}
+
+          <Box flexDirection="row" gap={1} flexWrap="wrap">
+            <Button key="copy-day" label="复制今天的工作记录" onPress={() => void copyDayLog($, e.surface)} />
+          </Box>
+
+          {history.length === 0 && <Text dimColor>还没有记录：每轮结束后会在这里留下一条</Text>}
+
+          {groupByDay(history).map(group => (
+            <Box key={`day-${group.label}`} flexDirection="column">
+              <Text bold color={CLAY_MUTED}>
+                {group.label} · {group.items.length} 轮
+              </Text>
+              {group.items.slice(0, 50).map(r => {
+                const isOpen = expanded === r.id
+                const mark = r.phase === 'interrupted' ? '✕' : r.errors > 0 ? '!' : '✓'
+                const markColor = r.phase === 'interrupted' ? STONE : r.errors > 0 ? AMBER : OLIVE
+                return (
+                  <Box key={`turn-${r.id}`} flexDirection="column" marginBottom={isOpen ? 1 : 0}>
+                    <Box flexDirection="row" gap={1} alignItems="center">
+                      <Box width={2} flexShrink={0}>
+                        <Text bold color={markColor}>
+                          {mark}
+                        </Text>
+                      </Box>
+                      <Box width={6} flexShrink={0}>
+                        <Text dimColor>{clockTime(r.startedAt)}</Text>
+                      </Box>
+                      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+                        <Button
+                          key={`turn-toggle-${r.id}`}
+                          plain
+                          label={`${isOpen ? '▾' : '▸'} ${r.summary}`}
+                          hover={{ underline: true, color: CLAY }}
+                          onPress={() => void update($, expandedTurnAtom, cur => (cur === r.id ? null : r.id))}
+                        />
+                      </Box>
+                      <Box flexShrink={0}>
+                        <Text dimColor>{recordMeta(r)}</Text>
+                      </Box>
+                    </Box>
+                    {isOpen && (
+                      <Box flexDirection="column" paddingLeft={9} marginTop={1}>
+                        <Text color={CLOUD} wrap="wrap">
+                          「{r.request}」
+                        </Text>
+                        <Text dimColor wrap="wrap">
+                          {[
+                            r.project ? `项目 ${r.project}` : null,
+                            r.sessionId === sessionId ? '本会话' : `${dayLabel(r.startedAt)}的会话`,
+                            r.errors ? `${r.errors} 次失败` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                        <Text dimColor wrap="wrap">
+                          {`输入 ${fmtTokens(r.tokens.input)} · 输出 ${fmtTokens(r.tokens.output)} · 缓存读 ${fmtTokens(r.tokens.cacheRead)} · 缓存写 ${fmtTokens(r.tokens.cacheWrite)} · 旁白 ${fmtTokens(r.narratorTokens)}`}
+                        </Text>
+                        {r.files.length > 0 && (
+                          <Text wrap="wrap">
+                            <Text dimColor>改了 </Text>
+                            {r.files.join('、')}
+                          </Text>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                )
+              })}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
+
+    const body = tab === 'turn' ? await turnView() : tab === 'changes' ? await changesView() : await historyView()
 
     return (
       <Box flexDirection="column" gap={1}>
