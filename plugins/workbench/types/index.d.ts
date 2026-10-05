@@ -23,7 +23,8 @@ export type Narration = {
 export type StepView = {
   id: string
   tool: string
-  label: string
+  label: string // 一行摘要，最多 120 字
+  detail: string // 完整命令或参数，最多 2000 字，展开、复制、填入时用
   agent: boolean
   ok: boolean | null // null：还在跑
   startedAt: number

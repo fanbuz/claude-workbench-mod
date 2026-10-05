@@ -1,6 +1,31 @@
 {
   "name": "workbench",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "工作台：输入框上方的实时旁白条，加一个「本轮步骤 / 改动」两栏的侧边面板",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "narratorMode": {
+      "type": "string",
+      "title": "旁白模式",
+      "description": "full：读工具调用和模型的思考、回复；lite：只在工具调用时更新；off：不调用模型，旁白显示当前步骤",
+      "default": "full",
+      "options": [
+        "full",
+        "lite",
+        "off"
+      ]
+    },
+    "narratorIntervalSeconds": {
+      "type": "number",
+      "title": "旁白最短间隔（秒）",
+      "description": "两次旁白更新至少间隔多少秒，3 到 120",
+      "default": 8
+    },
+    "narratorMaterialChars": {
+      "type": "number",
+      "title": "触发更新的新内容字数",
+      "description": "full 模式下，模型新写出多少字才再更新一次旁白，100 到 5000",
+      "default": 400
+    }
+  }
 }

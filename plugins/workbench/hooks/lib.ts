@@ -43,6 +43,23 @@ export function clip(text: string, max: number): string {
 }
 
 // ── 工具调用 ──────────────────────────────────────────────────────────────
+// 完整的命令或主要参数（展开、复制、填入输入框时用）
+export function detailOf(args: Record<string, unknown>): string {
+  const pick = (k: string) => (typeof args[k] === 'string' ? (args[k] as string) : '')
+  const raw =
+    pick('command') ||
+    pick('file_path') ||
+    pick('notebook_path') ||
+    pick('path') ||
+    pick('pattern') ||
+    pick('url') ||
+    pick('query') ||
+    pick('description') ||
+    pick('prompt') ||
+    pick('skill')
+  return clip(raw.trim(), 2000)
+}
+
 export function labelOf(args: Record<string, unknown>): string {
   const pick = (k: string) => (typeof args[k] === 'string' ? (args[k] as string) : '')
   const path = pick('file_path') || pick('notebook_path') || pick('path')
@@ -221,6 +238,32 @@ export function summaryPrompt(files: string[]): string {
     `总结一下当前工作区的改动（${files.length} 个文件${files.length ? `：${files.slice(0, 20).join('、')}${files.length > 20 ? ' 等' : ''}` : ''}）。` +
     `按模块说明改了什么、为什么改，指出可能有风险的地方。只读，不要修改文件。`
   )
+}
+
+export function retryPrompt(tool: string, detail: string, error: string | null): string {
+  return (
+    `上一轮里这一步失败了：${tool}\n\n${detail}\n\n报错：${error ?? '（无输出）'}\n\n` +
+    '先说明失败的原因，再修正后重试这一步。'
+  )
+}
+
+// ── 配置（plugin.json 的 userConfig）──────────────────────────────────────────
+export type NarratorMode = 'full' | 'lite' | 'off'
+
+export type NarratorConfig = { mode: NarratorMode; minGapMs: number; materialStep: number }
+
+function numberOption(value: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
+}
+
+export function narratorConfig(options: Readonly<Record<string, unknown>>): NarratorConfig {
+  const mode = options['narratorMode']
+  return {
+    mode: mode === 'lite' || mode === 'off' ? mode : 'full',
+    minGapMs: numberOption(options['narratorIntervalSeconds'], 3, 120, 8) * 1000,
+    materialStep: numberOption(options['narratorMaterialChars'], 100, 5000, 400),
+  }
 }
 
 export const COMMIT_PROMPT =

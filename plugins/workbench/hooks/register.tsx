@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 
 import type {
   GitFile,
@@ -31,6 +31,7 @@ import {
   ZERO,
   clip,
   clockTime,
+  detailOf,
   duration,
   editedPath,
   errorOf,
@@ -38,8 +39,10 @@ import {
   iconWidth,
   labelOf,
   mergeNumstat,
+  narratorConfig,
   oneLine,
   parseStatus,
+  retryPrompt,
   shortLabel,
   shortTool,
   splitPath,
@@ -49,7 +52,7 @@ import {
   summaryPrompt,
   toolColor,
 } from './lib'
-import type { IconKind } from './lib'
+import type { IconKind, NarratorConfig } from './lib'
 
 // ── 状态 ──────────────────────────────────────────────────────────────────
 const lineAtom = atom({ plugin: 'workbench', key: 'line' } as const, null as Narration | null)
@@ -70,12 +73,10 @@ const gitAtom = atom({ plugin: 'workbench', key: 'git' } as const, {
 const PANE = 'workbench'
 const MODEL = 'haiku'
 
-const MIN_GAP_MS = 8000 // 两次旁白之间至少隔这么久，控制成本
 const TICK_MS = 1000
 const SPIN_MS = 450 // 圆点动画的帧间隔：慢一点，看着不累
 const DOT_FRAMES = [1, 2, 3] // 至少亮一颗，不会出现全灭
 const FLASH_MS = 1500 // token 增长后图标高亮多久
-const MATERIAL_STEP = 400 // 新流出这么多字才值得再说一句
 const TAIL = 800
 const GIT_STALE_MS = 30_000
 const MAX_ROWS = 40
@@ -101,6 +102,8 @@ let material = 0
 let narratedMaterial = 0
 let isIntroPending = false // 刚发出请求，还没说第一句
 let costAtStart: number | null = null
+// 旁白配置：register 时从插件配置读入，配置一改模块就会重载
+let config: NarratorConfig = narratorConfig({})
 
 function feed(kind: 'thinking' | 'text', text: string) {
   if (kind === 'thinking') thinking = (thinking + text).slice(-TAIL)
@@ -169,10 +172,13 @@ async function addNarratorUsage($: EngineInterface, u: Usage | undefined) {
 // ── 旁白 ──────────────────────────────────────────────────────────────────
 // 只在有新步骤或新素材、距上次够久、且没有请求在飞时才调用模型
 async function narrateLive($: EngineInterface) {
-  if (isInFlight || !isWorking) return
-  const hasNew = isIntroPending || steps.length !== narratedSteps || material - narratedMaterial >= MATERIAL_STEP
+  if (isInFlight || !isWorking || config.mode === 'off') return
+  // 节能模式：只在工具调用时更新，不读思考和回复，也不在开头单独说一句
+  const isFull = config.mode === 'full'
+  const isIntro = isIntroPending && isFull
+  const hasNew = isIntro || steps.length !== narratedSteps || (isFull && material - narratedMaterial >= config.materialStep)
   if (!hasNew) return
-  if (!isIntroPending && Date.now() - narratedAt < MIN_GAP_MS) return
+  if (!isIntro && Date.now() - narratedAt < config.minGapMs) return
   isInFlight = true
   isIntroPending = false
   narratedSteps = steps.length
@@ -186,8 +192,8 @@ async function narrateLive($: EngineInterface) {
       prompt: [
         `用户请求：\n${request.slice(0, 300)}`,
         steps.length ? `最近的工具调用（旧→新）：\n${describe(6, 80)}` : '还没有调用工具。',
-        thinking ? `助手最近的思考（末尾节选）：\n${thinking.slice(-400)}` : '',
-        answering ? `助手正在写的回复（末尾节选）：\n${answering.slice(-200)}` : '',
+        isFull && thinking ? `助手最近的思考（末尾节选）：\n${thinking.slice(-400)}` : '',
+        isFull && answering ? `助手正在写的回复（末尾节选）：\n${answering.slice(-200)}` : '',
       ]
         .filter(Boolean)
         .join('\n\n'),
@@ -215,9 +221,10 @@ async function narrateDone($: EngineInterface, reply: string, isAborted: boolean
     await update($, lineAtom, l => (l ? { ...l, text: '这一轮被中断了' } : l))
     return
   }
-  // 没调用工具的简短问答，不值得再花一次模型调用
-  if (steps.length === 0 && reply.length < 200) {
-    await update($, lineAtom, l => (l ? { ...l, text: '已直接回复', isThinking: false } : l))
+  // 关闭了模型旁白，或没调用工具的简短问答，都不值得再花一次模型调用
+  if (config.mode === 'off' || (steps.length === 0 && reply.length < 200)) {
+    const text = steps.length === 0 ? '已直接回复' : `这一轮完成了，共 ${steps.length} 步`
+    await update($, lineAtom, l => (l ? { ...l, text, isThinking: false } : l))
     return
   }
   let text = ''
@@ -296,6 +303,12 @@ async function refreshGit($: EngineInterface) {
   }))
 }
 
+// ── 本轮步骤的快捷操作 ─────────────────────────────────────────────────────
+async function copyText($: EngineInterface, text: string, surface: RenderSurface) {
+  const r = await $.ui.copy({ text, surface })
+  $.ui.toast(r.isCopied ? '已复制' : `没能复制：${'reason' in r ? r.reason : '未知原因'}`)
+}
+
 // ── 面板 ──────────────────────────────────────────────────────────────────
 async function openPane($: EngineInterface, tab: WorkbenchTab) {
   await update($, tabAtom, () => tab)
@@ -308,7 +321,9 @@ async function switchTab($: EngineInterface, tab: WorkbenchTab) {
   if (tab === 'changes' && Date.now() - ((await read($, gitAtom)).updatedAt ?? 0) > GIT_STALE_MS) void refreshGit($)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  config = narratorConfig(options)
+
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await settleStale($)
@@ -382,10 +397,12 @@ export const register: Register = on => {
     const startedAt = Date.now()
     const id = e.tool_use_id ?? `${e.tool}-${startedAt}`
     steps.push(step)
-    const view: StepView = { id, tool: step.tool, label: step.label, agent: step.agent, ok: null, startedAt, ms: null, error: null }
+    const view: StepView = { id, tool: step.tool, label: step.label, detail: detailOf(args), agent: step.agent, ok: null, startedAt, ms: null, error: null }
     await update($, stepsAtom, s => ({ ...s, items: [...s.items, view].slice(-200) }))
     const current = `${shortTool(step.tool)}${step.label ? ` · ${shortLabel(step.label)}` : ''}`
-    await update($, lineAtom, l => (l ? { ...l, current, steps: steps.length } : l))
+    await update($, lineAtom, l =>
+      l ? { ...l, current, steps: steps.length, text: config.mode === 'off' && isWorking ? `正在运行 ${current}` : l.text } : l,
+    )
 
     let ok = false
     let error: string | null = '执行被中断'
@@ -674,12 +691,30 @@ export const register: Register = on => {
                     </Box>
                   </Box>
                   {isOpen && (
-                    <Box flexDirection="column" paddingLeft={6} marginTop={1}>
-                      <Text wrap="wrap">{v.label || '(无参数)'}</Text>
+                    <Box flexDirection="column" paddingLeft={6} marginTop={1} gap={1}>
+                      <Text wrap="wrap">{v.detail || v.label || '(无参数)'}</Text>
                       {v.error && (
                         <Text color={ALERT} wrap="wrap">
                           {v.error}
                         </Text>
+                      )}
+                      {v.detail && (
+                        <Box flexDirection="row" gap={1} flexWrap="wrap">
+                          {v.ok === false && (
+                            <Button
+                              key={`retry-${v.id}`}
+                              variant="primary"
+                              label="让 Claude 排查并重试"
+                              onPress={() => void $.prompt.submit({ text: retryPrompt(v.tool, v.detail, v.error) })}
+                            />
+                          )}
+                          <Button key={`copy-${v.id}`} label="复制" onPress={() => void copyText($, v.detail, e.surface)} />
+                          <Button
+                            key={`fill-${v.id}`}
+                            label="填入输入框"
+                            onPress={() => void $.prompt.fill({ text: v.detail, mode: 'replace' })}
+                          />
+                        </Box>
                       )}
                     </Box>
                   )}

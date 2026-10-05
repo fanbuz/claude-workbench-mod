@@ -94,3 +94,70 @@ test('旁白条、本轮步骤和改动页在终端和桌面都能画出来', as
   expect(submitted.some(t => t.includes('提交信息'))).toBe(true)
   await pane.unmount()
 })
+
+test('展开的步骤可以复制、填入输入框，失败的步骤可以让 Claude 排查重试', async ($, on) => {
+  const submitted: string[] = []
+  const filled: string[] = []
+  const copied: string[] = []
+  on('tool.call', (_$, e) =>
+    (e as { command?: string }).command === 'npm test'
+      ? ({ result: { stdout: '', stderr: 'boom', interrupted: false }, isError: true, text: 'Error: 3 tests failed' } as never)
+      : ({ result: { stdout: 'ok', stderr: '', interrupted: false } } as never),
+  )
+  on('prompt.submit', (_$, e) => {
+    submitted.push(e.text)
+    return { text: e.text } as never
+  })
+  on('prompt.fill', (_$, e) => {
+    filled.push(e.text)
+    return { isFilled: true } as never
+  })
+  on('ui.copy', (_$, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } } as never
+  })
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 10 }, rateLimits: [] } }) as never)
+  on('session.cwd', () => ({ value: '/repo' }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('model.complete', () => ({ value: { isAnswered: true, text: '正在跑测试' } }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+
+  await $.prompt.submit({ text: '跑一下测试' })
+  await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'test' } as never)
+
+  const pane = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(PANE as never) })
+  await pane.press({ key: 'tab-turn' })
+  await pane.press({ key: (await pane.find({ type: 'Button', text: /npm test/ }))!.key! })
+  expect(await pane.find({ type: 'Text', text: /3 tests failed/ })).toBeDefined()
+
+  const copyKey = (await pane.find({ type: 'Button', text: /^复制$/ }))!.key!
+  await pane.press({ key: copyKey })
+  expect(copied).toEqual(['npm test'])
+
+  await pane.press({ key: (await pane.find({ type: 'Button', text: /填入输入框/ }))!.key! })
+  expect(filled).toEqual(['npm test'])
+
+  await pane.press({ key: (await pane.find({ type: 'Button', text: /排查并重试/ }))!.key! })
+  expect(submitted.some(t => t.includes('npm test') && t.includes('3 tests failed'))).toBe(true)
+  await pane.unmount()
+})
+
+test('off 模式不调用模型，旁白显示当前步骤', { options: { narratorMode: 'off' } }, async ($, on) => {
+  let modelCalls = 0
+  on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
+  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 10 }, rateLimits: [] } }) as never)
+  on('model.complete', () => {
+    modelCalls += 1
+    return { value: { isAnswered: true, text: '不该出现' } } as never
+  })
+
+  await $.prompt.submit({ text: '看看目录' })
+  await $.tool.call({ tool: 'Bash', command: 'ls -la', description: 'list' } as never)
+
+  const band = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
+  expect(await band.find({ type: 'Text', text: /正在运行 Bash · ls -la/ })).toBeDefined()
+  await band.unmount()
+  expect(modelCalls).toBe(0)
+})
