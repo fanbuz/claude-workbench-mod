@@ -164,13 +164,19 @@ async function refreshUsage($: EngineInterface) {
   )
 }
 
+// 每次写 $.state 都会让读它的界面重绘，重绘会替换按钮、让点击落空，所以一次模型响应只写一次：
+// 先读账本，再把 token、花费、上下文合在一起写
 async function addTurnUsage($: EngineInterface, u: Usage) {
   const now = Date.now()
   const at = (delta: number, prev: number) => (delta > 0 ? now : prev)
+  const ledger = await $.session.usage().catch(() => null)
+  const usd = ledger?.cost?.usd
   await update($, lineAtom, l =>
     l
       ? {
           ...l,
+          costUsd: usd !== undefined && costAtStart !== null ? Math.max(0, usd - costAtStart) : l.costUsd,
+          contextPercent: ledger?.context.percent ?? l.contextPercent,
           changedAt: {
             input: at(u.input_tokens, l.changedAt.input),
             output: at(u.output_tokens, l.changedAt.output),
@@ -186,7 +192,6 @@ async function addTurnUsage($: EngineInterface, u: Usage) {
         }
       : l,
   )
-  await refreshUsage($).catch(() => undefined)
 }
 
 async function addNarratorUsage($: EngineInterface, u: Usage | undefined) {
@@ -209,7 +214,6 @@ async function narrateLive($: EngineInterface) {
   narratedSteps = steps.length
   narratedMaterial = material
   narratedAt = Date.now()
-  await update($, lineAtom, l => (l ? { ...l, isThinking: true } : l))
   try {
     const r = await $.model.complete({
       model: MODEL,
@@ -226,15 +230,16 @@ async function narrateLive($: EngineInterface) {
       effort: 'low',
       timeoutMs: 10_000,
     })
-    await addNarratorUsage($, r.usage)
-    if (r.isAnswered && isWorking) {
-      const text = oneLine(r.text)
-      if (text) await update($, lineAtom, l => (l && l.phase === 'working' ? { ...l, text } : l))
-      await syncStatus($)
+    const text = r.isAnswered && isWorking ? oneLine(r.text) : ''
+    const spent = r.usage ? usageTotal(r.usage) : 0
+    if (text || spent) {
+      await update($, lineAtom, l =>
+        l ? { ...l, narratorTokens: l.narratorTokens + spent, text: text && l.phase === 'working' ? text : l.text } : l,
+      )
     }
+    if (text) await syncStatus($)
   } finally {
     isInFlight = false
-    await update($, lineAtom, l => (l ? { ...l, isThinking: false } : l))
   }
 }
 
@@ -268,9 +273,20 @@ async function narrateDone($: EngineInterface, reply: string, isAborted: boolean
       // 模型没答上来就用兜底文案，下面照常收尾
     }
   }
-  await refreshUsage($).catch(() => undefined)
-  // 无论模型答没答、出没出错，都收起"更新中"，并把这一轮记进历史
-  await update($, lineAtom, l => (l ? { ...l, text: text || tr().done, isThinking: false } : l))
+  // 无论模型答没答、出没出错，都收起"更新中"，并把这一轮记进历史；最终花费和收尾文字一次写入
+  const ledger = await $.session.usage().catch(() => null)
+  const usd = ledger?.cost?.usd
+  await update($, lineAtom, l =>
+    l
+      ? {
+          ...l,
+          text: text || tr().done,
+          isThinking: false,
+          costUsd: usd !== undefined && costAtStart !== null ? Math.max(0, usd - costAtStart) : l.costUsd,
+          contextPercent: ledger?.context.percent ?? l.contextPercent,
+        }
+      : l,
+  )
   await recordTurn($)
   await syncStatus($)
 }
@@ -552,7 +568,7 @@ export const register: Register = (on, options) => {
       step.ok = ok
       step.ms = Date.now() - startedAt
       const ms = step.ms
-      await update($, lineAtom, l => (l ? { ...l, errors: l.errors + (ok ? 0 : 1) } : l))
+      if (!ok) await update($, lineAtom, l => (l ? { ...l, errors: l.errors + 1 } : l))
       await update($, stepsAtom, s => ({
         ...s,
         items: s.items.map(v => (v.id === id ? { ...v, ok, ms, error: ok ? null : error } : v)),

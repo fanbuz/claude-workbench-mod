@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fewer redraws while Claude works** (#19): one state write per model response (tokens, cost and context together), one per narration (the unused "updating" flag is gone), and no write when a successful tool call leaves the failure count unchanged; every write redraws its readers, and redraws can drop clicks.
 - **Fix: settings need several clicks** (#19): the picked option lights up at once and shows "Saving…" until the plugin reloads; repeat clicks while saving are ignored; the settings pane asks for focus when opened.
 - **Long narration** (#17): the full narration is kept (it used to be clipped to 32 characters at the source), and the new `narrationOverflow` option chooses `truncate` (a **Full text** button expands it), `wrap` or `scroll` (a self-animating SVG on Desktop, wrap in the terminal).
 - **Fix: terminal icons**: the terminal now shows the Unicode token symbols; it used to get the SVG's alt text because its element table also lists `Svg`.
