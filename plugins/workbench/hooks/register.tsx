@@ -84,6 +84,7 @@ const historyAtom = atom({ plugin: 'workbench', key: 'history' } as const, [] as
 const expandedTurnAtom = atom({ plugin: 'workbench', key: 'expandedTurn' } as const, null as string | null)
 const legendAtom = atom({ plugin: 'workbench', key: 'legendOpen' } as const, false)
 const narrationExpandedAtom = atom({ plugin: 'workbench', key: 'narrationExpanded' } as const, false)
+const pendingSettingAtom = atom({ plugin: 'workbench', key: 'pendingSetting' } as const, null as { field: string; value: string } | null)
 const confirmCompactAtom = atom({ plugin: 'workbench', key: 'confirmCompact' } as const, false)
 
 const PANE = 'workbench'
@@ -399,16 +400,28 @@ async function copyText($: EngineInterface, text: string, surface: RenderSurface
 
 // ── 设置 ──────────────────────────────────────────────────────────────────
 async function openSettings($: EngineInterface) {
-  await $.ui.open({ id: SETTINGS_PANE, title: tr().settingsTitle })
+  // 请求键盘焦点：有的界面第一下点击只是激活面板，拿到焦点后第一下就能点中
+  await $.ui.open({ id: SETTINGS_PANE, title: tr().settingsTitle, focus: true })
 }
 
 // 和 /config 菜单走同一条路：$.config.set 写进设置，插件随后带着新值重载
+// 点下去先把高亮挪过去（pendingSetting），保存成功后插件会带着新值重载，
+// 重载时 session.start 再清掉它；保存期间同一项的重复点击直接忽略
 async function saveSetting($: EngineInterface, field: SettingField, value: string | number) {
+  if ((await read($, pendingSettingAtom))?.field === field) return
+  await update($, pendingSettingAtom, () => ({ field, value: String(value) }))
+  const fail = async (message: string) => {
+    await update($, pendingSettingAtom, () => null)
+    $.ui.toast(message)
+  }
   const row = (await $.config.list()).find(r => isOwnConfigKey(r.key, field))
-  if (!row) return $.ui.toast(tr().settingMissing)
-  if (row.isLocked) return $.ui.toast(tr().settingLocked)
+  if (!row) return fail(tr().settingMissing)
+  if (row.isLocked) return fail(tr().settingLocked)
   const r = await $.config.set({ key: row.key, value })
-  $.ui.toast('deny' in r && r.deny ? tr().settingFailed(r.deny) : tr().settingSaved)
+  if ('deny' in r && r.deny) return fail(tr().settingFailed(r.deny))
+  $.ui.toast(tr().settingSaved)
+  // 万一没有触发重载（比如值其实没变），几秒后自己收起「保存中」
+  $.clock.after(4000, () => void update($, pendingSettingAtom, p => (p?.field === field ? null : p)))
 }
 
 // ── 面板 ──────────────────────────────────────────────────────────────────
@@ -434,6 +447,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await settleStale($)
+    await update($, pendingSettingAtom, () => null)
     if (config.language === 'auto') {
       const settings = (await $.settings.read().catch(() => ({}))) as Record<string, unknown>
       const locale = (await $.env.get('LC_ALL').catch(() => undefined)) || (await $.env.get('LANG').catch(() => undefined))
@@ -1179,15 +1193,21 @@ export const register: Register = (on, options) => {
       narratorMaterialChars: String(config.materialStep),
     }
     const resolved = m.langName[m.lang]
+    const pending = await read($, pendingSettingAtom)
 
     return (
       <Box flexDirection="column" gap={1}>
         <Text bold>{m.settingsTitle}</Text>
         {SETTING_FIELDS.map(({ field, choices }) => {
           const meta = m.fields[field]!
+          const isSaving = pending?.field === field
+          const selected = isSaving ? pending.value : current[field]
           return (
             <Box key={`setting-${field}`} flexDirection="column">
-              <Text bold>{meta.title}</Text>
+              <Text>
+                <Text bold>{meta.title}</Text>
+                {isSaving && <Text dimColor>{`  ${m.settingSaving}`}</Text>}
+              </Text>
               <Text dimColor wrap="wrap">
                 {meta.desc}
               </Text>
@@ -1198,8 +1218,8 @@ export const register: Register = (on, options) => {
                     <Button
                       key={`set-${field}-${value}`}
                       label={meta.choice(value, resolved)}
-                      variant={current[field] === value ? 'primary' : 'secondary'}
-                      onPress={() => (current[field] === value ? undefined : void saveSetting($, field, choice))}
+                      variant={selected === value ? 'primary' : 'secondary'}
+                      onPress={() => (selected === value ? undefined : void saveSetting($, field, choice))}
                     />
                   )
                 })}

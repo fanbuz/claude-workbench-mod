@@ -303,6 +303,11 @@ test('settings: the gear opens the settings pane, a pick goes through $.config.s
     props: { title: 'Workbench settings', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40, totalRows: 0 } },
   } as never)
   await settings.press({ key: 'set-language-zh' })
+  // 点下去高亮立刻挪到新选项，并显示「保存中」，不用等插件重载
+  expect((await settings.find({ key: 'set-language-zh' }))?.props.variant).toBe('primary')
+  expect((await settings.find({ key: 'set-language-auto' }))?.props.variant).toBe('secondary')
+  expect(await settings.find({ type: 'Text', text: /Saving…/ })).toBeDefined()
+  await settings.press({ key: 'set-language-en' }) // 保存期间同一项再点会被忽略
   await settings.press({ key: 'set-narratorIntervalSeconds-15' })
   expect(sets).toEqual([
     { key: 'workbench@inline.language', value: 'zh' },

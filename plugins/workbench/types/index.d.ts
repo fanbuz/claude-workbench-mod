@@ -85,6 +85,7 @@ declare module 'claude-code' {
       confirmCompact: boolean
       legendOpen: boolean
       narrationExpanded: boolean
+      pendingSetting: { field: string; value: string } | null // 已点、正在保存（等插件重载）的那一项
     }
   }
 }
