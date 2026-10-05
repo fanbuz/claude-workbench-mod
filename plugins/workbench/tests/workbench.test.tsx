@@ -21,7 +21,7 @@ const GIT: Record<string, string> = {
   'diff --numstat HEAD': '12\t3\tsrc/app.ts\n',
 }
 
-test('旁白条、本轮步骤和改动页在终端和桌面都能画出来', async ($, on) => {
+test('zh: band, turn steps and changes render on terminal and desktop', { options: { language: 'zh' } }, async ($, on) => {
   const opened: string[] = []
   const submitted: string[] = []
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
@@ -95,7 +95,7 @@ test('旁白条、本轮步骤和改动页在终端和桌面都能画出来', as
   await pane.unmount()
 })
 
-test('展开的步骤可以复制、填入输入框，失败的步骤可以让 Claude 排查重试', async ($, on) => {
+test('zh: an expanded step can be copied or put in the prompt, a failed one retried', { options: { language: 'zh' } }, async ($, on) => {
   const submitted: string[] = []
   const filled: string[] = []
   const copied: string[] = []
@@ -143,7 +143,7 @@ test('展开的步骤可以复制、填入输入框，失败的步骤可以让 C
   await pane.unmount()
 })
 
-test('off 模式不调用模型，旁白显示当前步骤', { options: { narratorMode: 'off' } }, async ($, on) => {
+test('zh: off mode makes no model calls and shows the current step', { options: { narratorMode: 'off', language: 'zh' } }, async ($, on) => {
   let modelCalls = 0
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
   on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
@@ -162,7 +162,7 @@ test('off 模式不调用模型，旁白显示当前步骤', { options: { narrat
   expect(modelCalls).toBe(0)
 })
 
-test('每轮结束记进历史，历史页显示汇总并能复制今天的工作记录', async ($, on) => {
+test('zh: each turn lands in the history, which can copy today\'s log', { options: { language: 'zh' } }, async ($, on) => {
   const copied: string[] = []
   const stored: Record<string, unknown> = {}
   on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
@@ -197,5 +197,46 @@ test('每轮结束记进历史，历史页显示汇总并能复制今天的工�
   expect(await pane.find({ type: 'Button', text: /压缩上下文/ })).toBeDefined() // 上下文 62% ≥ 50%
   await pane.press({ key: 'copy-day' })
   expect(copied[0]).toContain('[demo-app] 改好了登录页的表单校验')
+  await pane.unmount()
+})
+
+// 以下两个测试验证语言：默认 auto 跟随设置和系统语言
+
+const quiet = (on: Parameters<Parameters<typeof test>[1]>[1]) => {
+  on('tool.call', () => ({ result: { stdout: 'ok', stderr: '', interrupted: false } }) as never)
+  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 30 }, rateLimits: [], cost: { usd: 0.05 } } }) as never)
+  on('session.cwd', () => ({ value: '/repo' }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('model.complete', () => ({ value: { isAnswered: true, text: 'Reading the project layout' } }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+}
+
+test('en: English UI by default when nothing points to Chinese', async ($, on) => {
+  quiet(on)
+  await $.prompt.submit({ text: 'look around' })
+  await $.tool.call({ tool: 'Bash', command: 'ls -la', description: 'list' } as never)
+
+  const band = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(BAND as never) })
+  expect(await band.find({ type: 'Button', text: /Step 1 ›/ })).toBeDefined()
+  await band.unmount()
+
+  const pane = await $.ui.mount({ plugin: 'workbench', surface: 'terminal', ...(PANE as never) })
+  expect(await pane.find({ type: 'Button', text: /This turn/ })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: /History/ })).toBeDefined()
+  await pane.press({ key: 'tab-turn' })
+  expect(await pane.find({ type: 'Text', text: /1 steps/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('auto: follows a Chinese language setting', async ($, on) => {
+  quiet(on)
+  on('settings.read', () => ({ value: { language: '简体中文' } }) as never)
+  on('session.start', () => ({ cwd: '/repo' }) as never)
+  await $.session.start({ source: 'startup', cwd: '/repo' } as never)
+  await $.prompt.submit({ text: '看看目录' })
+
+  const pane = await $.ui.mount({ plugin: 'workbench', surface: 'desktop', ...(PANE as never) })
+  expect(await pane.find({ type: 'Button', text: /本轮/ })).toBeDefined()
   await pane.unmount()
 })

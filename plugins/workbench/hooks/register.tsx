@@ -14,12 +14,10 @@ import type {
 } from '../types'
 import {
   ALERT,
-  ALT,
   AMBER,
   CLAY,
   CLAY_MUTED,
   CLOUD,
-  COMMIT_PROMPT,
   GLYPHS,
   ICONS,
   ICON_H,
@@ -27,8 +25,6 @@ import {
   OLIVE,
   SKY,
   STONE,
-  SYSTEM_DONE,
-  SYSTEM_LIVE,
   ZERO,
   clip,
   clockTime,
@@ -48,19 +44,17 @@ import {
   oneLine,
   parseStatus,
   recordMeta,
-  retryPrompt,
   shortLabel,
   shortTool,
   splitPath,
   statusColor,
-  statusLabel,
   stepTime,
-  summaryPrompt,
   tokenTotal,
   toolColor,
   usageChart,
 } from './lib'
 import type { IconKind, NarratorConfig } from './lib'
+import { detectLang, setLang, tr } from './i18n'
 
 // ── 状态 ──────────────────────────────────────────────────────────────────
 const lineAtom = atom({ plugin: 'workbench', key: 'line' } as const, null as Narration | null)
@@ -95,10 +89,10 @@ const TAIL = 800
 const GIT_STALE_MS = 30_000
 const MAX_ROWS = 40
 
-const TABS: { id: WorkbenchTab; label: string }[] = [
-  { id: 'turn', label: '本轮' },
-  { id: 'changes', label: '改动' },
-  { id: 'history', label: '历史' },
+const TABS: { id: WorkbenchTab; label: () => string }[] = [
+  { id: 'turn', label: () => tr().tabTurn },
+  { id: 'changes', label: () => tr().tabChanges },
+  { id: 'history', label: () => tr().tabHistory },
 ]
 
 // ── 这一轮的进度：模块变量，热重载时从头开始 ─────────────────────────────────
@@ -135,8 +129,9 @@ const describe = (count = 10, width = 120) =>
   steps
     .slice(-count)
     .map((s, i) => {
-      const state = s.ok === null ? '进行中' : s.ok ? `完成 ${s.ms}ms` : '失败'
-      return `${i + 1}. ${s.agent ? '[子代理] ' : ''}${s.tool}: ${clip(s.label, width) || '(无参数)'} → ${state}`
+      const m = tr()
+      const state = s.ok === null ? m.stepRunning : s.ok ? m.stepDone(s.ms ?? 0) : m.stepFailed
+      return `${i + 1}. ${s.agent ? m.subagent : ''}${s.tool}: ${clip(s.label, width) || m.noArgs} → ${state}`
     })
     .join('\n')
 
@@ -205,12 +200,12 @@ async function narrateLive($: EngineInterface) {
   try {
     const r = await $.model.complete({
       model: MODEL,
-      system: SYSTEM_LIVE,
+      system: tr().systemLive,
       prompt: [
-        `用户请求：\n${request.slice(0, 300)}`,
-        steps.length ? `最近的工具调用（旧→新）：\n${describe(6, 80)}` : '还没有调用工具。',
-        isFull && thinking ? `助手最近的思考（末尾节选）：\n${thinking.slice(-400)}` : '',
-        isFull && answering ? `助手正在写的回复（末尾节选）：\n${answering.slice(-200)}` : '',
+        `${tr().pRequest}\n${request.slice(0, 300)}`,
+        steps.length ? `${tr().pRecentTools}\n${describe(6, 80)}` : tr().pNoTools,
+        isFull && thinking ? `${tr().pThinking}\n${thinking.slice(-400)}` : '',
+        isFull && answering ? `${tr().pAnswer}\n${answering.slice(-200)}` : '',
       ]
         .filter(Boolean)
         .join('\n\n'),
@@ -240,16 +235,16 @@ async function narrateDone($: EngineInterface, reply: string, isAborted: boolean
       : l,
   )
   let text = ''
-  if (isAborted) text = '这一轮被中断了'
-  else if (isQuick) text = steps.length === 0 ? '已直接回复' : `这一轮完成了，共 ${steps.length} 步`
+  if (isAborted) text = tr().aborted
+  else if (isQuick) text = steps.length === 0 ? tr().answered : tr().doneSteps(steps.length)
   else {
     try {
       const r = await $.model.complete({
         model: MODEL,
-        system: SYSTEM_DONE,
+        system: tr().systemDone,
         prompt:
-          `用户请求：\n${request.slice(0, 600)}\n\n做过的步骤（共 ${steps.length} 步，最近的在后）：\n${describe()}` +
-          `\n\n助手最后的回复（节选）：\n${reply.slice(0, 1200)}`,
+          `${tr().pRequest}\n${request.slice(0, 600)}\n\n${tr().pSteps(steps.length)}\n${describe()}` +
+          `\n\n${tr().pReply}\n${reply.slice(0, 1200)}`,
         maxTokens: 120,
         effort: 'low',
         timeoutMs: 15_000,
@@ -262,7 +257,7 @@ async function narrateDone($: EngineInterface, reply: string, isAborted: boolean
   }
   await refreshUsage($).catch(() => undefined)
   // 无论模型答没答、出没出错，都收起"更新中"，并把这一轮记进历史
-  await update($, lineAtom, l => (l ? { ...l, text: text || '这一轮完成了', isThinking: false } : l))
+  await update($, lineAtom, l => (l ? { ...l, text: text || tr().done, isThinking: false } : l))
   await recordTurn($)
   await syncStatus($)
 }
@@ -316,7 +311,7 @@ async function compactContext($: EngineInterface) {
   }
   await update($, confirmCompactAtom, () => false)
   const r = await $.session.compact()
-  $.ui.toast('skip' in r && r.skip ? `没有压缩：${r.skip}` : '上下文已压缩')
+  $.ui.toast('skip' in r && r.skip ? tr().compactSkipped(r.skip) : tr().compacted)
   await refreshUsage($).catch(() => undefined)
 }
 
@@ -326,18 +321,18 @@ async function syncStatus($: EngineInterface) {
   const l = await read($, lineAtom)
   if (!l) return $.ui.status(undefined)
   const mark = l.phase === 'working' ? '●' : l.phase === 'done' ? '✓' : '✕'
-  $.ui.status(`${mark} ${l.text} · ${l.steps} 步`)
+  $.ui.status(tr().statusLine(mark, l.text, l.steps))
 }
 
 // 热重载会丢掉旧模块里还没跑完的旁白请求：新模块加载时把它留下的半截状态收尾
 async function settleStale($: EngineInterface) {
   await update($, lineAtom, l => {
     if (!l || (!l.isThinking && l.phase !== 'working')) return l
-    const isStaleLive = l.phase === 'working' || l.text.startsWith('正在')
+    const isStaleLive = l.phase === 'working' || l.isThinking
     return {
       ...l,
       phase: l.phase === 'working' ? ('done' as NarrationPhase) : l.phase,
-      text: isStaleLive ? '这一轮完成了' : l.text,
+      text: isStaleLive ? tr().done : l.text,
       current: '',
       endedAt: l.endedAt ?? Date.now(),
       isThinking: false,
@@ -369,7 +364,7 @@ async function refreshGit($: EngineInterface) {
     git($, root, ['diff', '--numstat', 'HEAD']).then(out => out ?? git($, root, ['diff', '--numstat'])),
   ])
   if (status === null) {
-    await update($, gitAtom, g => ({ ...g, isLoading: false, error: '读取 git status 失败' }))
+    await update($, gitAtom, g => ({ ...g, isLoading: false, error: tr().gitStatusFailed }))
     return
   }
   const files = mergeNumstat(parseStatus(status), numstat ?? '')
@@ -387,14 +382,14 @@ async function refreshGit($: EngineInterface) {
 // ── 本轮步骤的快捷操作 ─────────────────────────────────────────────────────
 async function copyText($: EngineInterface, text: string, surface: RenderSurface) {
   const r = await $.ui.copy({ text, surface })
-  $.ui.toast(r.isCopied ? '已复制' : `没能复制：${'reason' in r ? r.reason : '未知原因'}`)
+  $.ui.toast(r.isCopied ? tr().copied : tr().copyFailed('reason' in r ? r.reason : tr().unknownReason))
 }
 
 // ── 面板 ──────────────────────────────────────────────────────────────────
 async function openPane($: EngineInterface, tab: WorkbenchTab) {
   await update($, tabAtom, () => tab)
   if (tab === 'changes' && Date.now() - ((await read($, gitAtom)).updatedAt ?? 0) > GIT_STALE_MS) void refreshGit($)
-  await $.ui.open({ id: PANE, title: '工作台' })
+  await $.ui.open({ id: PANE, title: tr().paneTitle })
 }
 
 async function switchTab($: EngineInterface, tab: WorkbenchTab) {
@@ -404,11 +399,17 @@ async function switchTab($: EngineInterface, tab: WorkbenchTab) {
 
 export const register: Register = (on, options) => {
   config = narratorConfig(options)
+  setLang(config.language === 'auto' ? 'en' : config.language) // auto 在 session.start 里再按设置和系统语言判断
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await settleStale($)
-    await $.command.register({ name: 'workbench', description: '打开工作台（本轮步骤 / 改动 / 历史）' })
+    if (config.language === 'auto') {
+      const settings = (await $.settings.read().catch(() => ({}))) as Record<string, unknown>
+      const locale = (await $.env.get('LC_ALL').catch(() => undefined)) || (await $.env.get('LANG').catch(() => undefined))
+      setLang(detectLang(settings['language'], locale))
+    }
+    await $.command.register({ name: 'workbench', description: tr().cmdDescription })
     sessionId = await $.session.id().catch(() => '')
     void loadHistory($)
     if (config.bandMode !== 'status') $.ui.status(undefined)
@@ -427,7 +428,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'workbench' }, async $ => {
     await openPane($, await read($, tabAtom))
-    return { text: '工作台已打开。' }
+    return { text: tr().cmdOpened }
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -450,7 +451,7 @@ export const register: Register = (on, options) => {
     )
     await update($, lineAtom, () => ({
       phase: 'working' as NarrationPhase,
-      text: '正在理解你的请求',
+      text: tr().understanding,
       current: '',
       steps: 0,
       errors: 0,
@@ -487,12 +488,12 @@ export const register: Register = (on, options) => {
     await update($, stepsAtom, s => ({ ...s, items: [...s.items, view].slice(-200) }))
     const current = `${shortTool(step.tool)}${step.label ? ` · ${shortLabel(step.label)}` : ''}`
     await update($, lineAtom, l =>
-      l ? { ...l, current, steps: steps.length, text: config.mode === 'off' && isWorking ? `正在运行 ${current}` : l.text } : l,
+      l ? { ...l, current, steps: steps.length, text: config.mode === 'off' && isWorking ? tr().running(current) : l.text } : l,
     )
     await syncStatus($)
 
     let ok = false
-    let error: string | null = '执行被中断'
+    let error: string | null = tr().interrupted
     try {
       const ran = await next(e)
       ok = ran.deny === undefined && ran.isError !== true
@@ -565,7 +566,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="row" alignItems="center" gap={1}>
           {Svg ? (
-            <Svg source={ICONS[kind](c)} alt={ALT[kind]} width={iconWidth(kind)} height={ICON_H} />
+            <Svg source={ICONS[kind](c)} alt={tr().alt[kind]} width={iconWidth(kind)} height={ICON_H} />
           ) : (
             <Text color={c}>{GLYPHS[kind]}</Text>
           )}
@@ -609,13 +610,13 @@ export const register: Register = (on, options) => {
             <Button
               key="steps"
               plain
-              label={`${isWorkingNow ? '步骤' : '共'} ${line.steps} 步 ›`}
+              label={tr().bandSteps(isWorkingNow, line.steps)}
               hover={{ underline: true, color: CLAY }}
               onPress={() => void openPane($, 'turn')}
             />
           </Box>
           <Text>
-            <Text dimColor>用时 </Text>
+            <Text dimColor>{tr().bandTime}</Text>
             <Text bold>{elapsed}</Text>
           </Text>
           {line.errors > 0 && (
@@ -623,7 +624,7 @@ export const register: Register = (on, options) => {
               <Button
                 key="errors"
                 plain
-                label={`✗ ${line.errors} 次失败 ›`}
+                label={tr().bandFailures(line.errors)}
                 hover={{ underline: true }}
                 onPress={() => void openPane($, 'turn')}
               />
@@ -634,7 +635,7 @@ export const register: Register = (on, options) => {
               <Button
                 key="changes"
                 plain
-                label={`改动 ${gitState.files.length} 个文件 ›`}
+                label={tr().bandChanges(gitState.files.length)}
                 hover={{ underline: true, color: CLAY }}
                 onPress={() => void openPane($, 'changes')}
               />
@@ -667,7 +668,7 @@ export const register: Register = (on, options) => {
             {ctx !== null && (
               <Box flexDirection="row" alignItems="center" gap={1}>
                 {Svg ? (
-                  <Svg source={ICONS.context(ctxColor)} alt={ALT.context} width={ICON_H} height={ICON_H} />
+                  <Svg source={ICONS.context(ctxColor)} alt={tr().alt.context} width={ICON_H} height={ICON_H} />
                 ) : (
                   <Text color={ctxColor}>{GLYPHS.context}</Text>
                 )}
@@ -707,7 +708,7 @@ export const register: Register = (on, options) => {
         {TABS.map(t => (
           <Button
             key={`tab-${t.id}`}
-            label={counts[t.id] ? `${t.label} ${counts[t.id]}` : t.label}
+            label={counts[t.id] ? `${t.label()} ${counts[t.id]}` : t.label()}
             variant={t.id === tab ? 'primary' : 'secondary'}
             onPress={() => void switchTab($, t.id)}
           />
@@ -727,9 +728,9 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column">
-            <Text bold>{isWorkingNow ? '本轮步骤' : '上一轮步骤'}</Text>
+            <Text bold>{isWorkingNow ? tr().turnTitle : tr().lastTurnTitle}</Text>
             <Text dimColor wrap="truncate-end">
-              {[`${items.length} 步`, okCount ? `${okCount} 成功` : null, failCount ? `${failCount} 失败` : null, elapsed ? `用时 ${elapsed}` : null]
+              {[tr().nSteps(items.length), okCount ? tr().nOk(okCount) : null, failCount ? tr().nFailed(failCount) : null, elapsed ? tr().timeSpent(elapsed) : null]
                 .filter(Boolean)
                 .join(' · ')}
             </Text>
@@ -739,7 +740,7 @@ export const register: Register = (on, options) => {
               </Text>
             )}
           </Box>
-          {items.length === 0 && <Text dimColor>这一轮还没有调用工具</Text>}
+          {items.length === 0 && <Text dimColor>{tr().noSteps}</Text>}
           <Box flexDirection="column">
             {items.map((v, i) => {
               const isOpen = expanded === v.id
@@ -768,7 +769,7 @@ export const register: Register = (on, options) => {
                         key={`toggle-${v.id}`}
                         plain
                         dimColor={!isOpen}
-                        label={`${isOpen ? '▾' : '▸'} ${v.label ? shortLabel(v.label) : '(无参数)'}`}
+                        label={`${isOpen ? '▾' : '▸'} ${v.label ? shortLabel(v.label) : tr().noArgs}`}
                         hover={{ underline: true, dimColor: false }}
                         onPress={() => void update($, expandedAtom, cur => (cur === v.id ? null : v.id))}
                       />
@@ -781,7 +782,7 @@ export const register: Register = (on, options) => {
                   </Box>
                   {isOpen && (
                     <Box flexDirection="column" paddingLeft={6} marginTop={1} gap={1}>
-                      <Text wrap="wrap">{v.detail || v.label || '(无参数)'}</Text>
+                      <Text wrap="wrap">{v.detail || v.label || tr().noArgs}</Text>
                       {v.error && (
                         <Text color={ALERT} wrap="wrap">
                           {v.error}
@@ -793,14 +794,14 @@ export const register: Register = (on, options) => {
                             <Button
                               key={`retry-${v.id}`}
                               variant="primary"
-                              label="让 Claude 排查并重试"
-                              onPress={() => void $.prompt.submit({ text: retryPrompt(v.tool, v.detail, v.error) })}
+                              label={tr().retry}
+                              onPress={() => void $.prompt.submit({ text: tr().retryPrompt(v.tool, v.detail, v.error) })}
                             />
                           )}
-                          <Button key={`copy-${v.id}`} label="复制" onPress={() => void copyText($, v.detail, e.surface)} />
+                          <Button key={`copy-${v.id}`} label={tr().copy} onPress={() => void copyText($, v.detail, e.surface)} />
                           <Button
                             key={`fill-${v.id}`}
-                            label="填入输入框"
+                            label={tr().fill}
                             onPress={() => void $.prompt.fill({ text: v.detail, mode: 'replace' })}
                           />
                         </Box>
@@ -836,7 +837,7 @@ export const register: Register = (on, options) => {
           <Box key={`file-${f.path}`} flexDirection="row" gap={1} alignItems="center">
             <Box width={2} flexShrink={0}>
               <Text bold color={statusColor(f.status)}>
-                {statusLabel(f.status)}
+                {tr().statusLabel(f.status)}
               </Text>
             </Box>
             <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
@@ -857,7 +858,7 @@ export const register: Register = (on, options) => {
               <Text>
                 {f.added !== null && <Text color={OLIVE}>+{f.added}</Text>}
                 {f.removed !== null && <Text color={ALERT}> −{f.removed}</Text>}
-                {f.status === '??' && <Text dimColor>新文件</Text>}
+                {f.status === '??' && <Text dimColor>{tr().newFile}</Text>}
               </Text>
             </Box>
           </Box>
@@ -867,8 +868,8 @@ export const register: Register = (on, options) => {
       if (!gitState.isRepo) {
         return (
           <Box flexDirection="column" gap={1}>
-            <Text dimColor>{gitState.isLoading ? '读取中…' : '当前目录不是 git 仓库'}</Text>
-            {touched.length > 0 && <Text>Claude 本次会话改过 {touched.length} 个文件</Text>}
+            <Text dimColor>{gitState.isLoading ? tr().loading : tr().notRepo}</Text>
+            {touched.length > 0 && <Text>{tr().touchedCount(touched.length)}</Text>}
           </Box>
         )
       }
@@ -879,35 +880,35 @@ export const register: Register = (on, options) => {
             <Box flexGrow={1} minWidth={0}>
               <Text wrap="truncate-end">
                 <Text color={SKY}>⎇ </Text>
-                <Text bold>{gitState.branch ?? '(无分支)'}</Text>
+                <Text bold>{gitState.branch ?? tr().noBranch}</Text>
                 <Text dimColor>
                   {'  '}
-                  {files.length} 个文件
+                  {tr().nFiles(files.length)}
                 </Text>
                 {added > 0 && <Text color={OLIVE}> +{added}</Text>}
                 {removed > 0 && <Text color={ALERT}> −{removed}</Text>}
               </Text>
             </Box>
-            <Text dimColor>{gitState.isLoading ? '刷新中…' : gitState.updatedAt ? `${clockTime(gitState.updatedAt)} 更新` : ''}</Text>
-            <Button key="git-refresh" label="刷新" onPress={() => void refreshGit($)} />
+            <Text dimColor>{gitState.isLoading ? tr().refreshing : gitState.updatedAt ? tr().updatedAt(clockTime(gitState.updatedAt)) : ''}</Text>
+            <Button key="git-refresh" label={tr().refresh} onPress={() => void refreshGit($)} />
           </Box>
           {gitState.error && <Text color={ALERT}>{gitState.error}</Text>}
 
           <Box flexDirection="row" gap={1} flexWrap="wrap">
             <Button
               key="summarize"
-              label="让 Claude 总结改动"
-              onPress={() => void $.prompt.submit({ text: summaryPrompt(files.map(f => f.path)) })}
+              label={tr().summarize}
+              onPress={() => void $.prompt.submit({ text: tr().summaryPrompt(files.map(f => f.path)) })}
             />
-            <Button key="commit-msg" label="生成提交信息" onPress={() => void $.prompt.submit({ text: COMMIT_PROMPT })} />
+            <Button key="commit-msg" label={tr().commitMsg} onPress={() => void $.prompt.submit({ text: tr().commitPrompt })} />
           </Box>
 
-          {files.length === 0 && <Text dimColor>工作区很干净，没有未提交的改动</Text>}
+          {files.length === 0 && <Text dimColor>{tr().clean}</Text>}
 
           {byClaude.length > 0 && (
             <Box flexDirection="column">
               <Text bold color={CLAY}>
-                Claude 本次会话改的 · {byClaude.length}
+                {tr().byClaude(byClaude.length)}
               </Text>
               {byClaude.slice(0, MAX_ROWS).map(fileRow)}
             </Box>
@@ -916,19 +917,19 @@ export const register: Register = (on, options) => {
           {others.length > 0 && (
             <Box flexDirection="column">
               <Text bold>
-                {byClaude.length > 0 ? '其他改动' : '工作区改动'} · {others.length}
+                {byClaude.length > 0 ? tr().otherChanges(others.length) : tr().workingChanges(others.length)}
               </Text>
               {others.slice(0, MAX_ROWS).map(fileRow)}
-              {others.length > MAX_ROWS && <Text dimColor>还有 {others.length - MAX_ROWS} 个文件没列出</Text>}
+              {others.length > MAX_ROWS && <Text dimColor>{tr().moreFiles(others.length - MAX_ROWS)}</Text>}
             </Box>
           )}
 
           {settled.length > 0 && (
             <Text dimColor wrap="truncate-end">
-              Claude 还改过 {settled.length} 个已提交或已还原的文件：{settled.map(f => splitPath(rel(f.path)).name).slice(0, 6).join('、')}
+              {tr().settled(settled.length, settled.map(f => splitPath(rel(f.path)).name).slice(0, 6).join(tr().listSep))}
             </Text>
           )}
-          <Text dimColor>点文件名会把 @路径 填进输入框</Text>
+          <Text dimColor>{tr().mentionHint}</Text>
         </Box>
       )
     }
@@ -953,20 +954,20 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column">
-            <Text bold>本会话</Text>
+            <Text bold>{tr().session}</Text>
             <Text wrap="truncate-end">
               <Text bold>{mine.length}</Text>
-              <Text dimColor> 轮 · 用时 </Text>
+              <Text dimColor>{tr().turnsTime}</Text>
               <Text bold>{duration(spent)}</Text>
-              <Text dimColor> · token </Text>
+              <Text dimColor>{tr().tokensLabel}</Text>
               <Text bold>{fmtTokens(tokens)}</Text>
-              {hasCost && <Text dimColor> · 花费 </Text>}
+              {hasCost && <Text dimColor>{tr().costLabel}</Text>}
               {hasCost && <Text bold>{money(cost)}</Text>}
             </Text>
             {ctx !== null && (
               <Box flexDirection="row" gap={1} alignItems="center">
                 <Text>
-                  <Text dimColor>上下文 </Text>
+                  <Text dimColor>{tr().context}</Text>
                   <Text color={ctxColor}>{'▰'.repeat(ctxFilled)}</Text>
                   <Text color={IDLE}>{'▱'.repeat(10 - ctxFilled)}</Text>
                   <Text bold color={ctxColor}>
@@ -978,7 +979,7 @@ export const register: Register = (on, options) => {
                   <Button
                     key="compact"
                     variant={confirm ? 'primary' : 'secondary'}
-                    label={confirm ? '再点一次确认压缩' : '压缩上下文'}
+                    label={confirm ? tr().compactConfirm : tr().compact}
                     onPress={() => void compactContext($)}
                   />
                 )}
@@ -987,19 +988,19 @@ export const register: Register = (on, options) => {
           </Box>
 
           {history.length > 1 && Svg && (
-            <Svg source={usageChart(history, chartW, 64)} alt={`最近 ${Math.min(24, history.length)} 轮的花费`} width={chartW} height={64} />
+            <Svg source={usageChart(history, chartW, 64)} alt={tr().chartAlt(Math.min(24, history.length))} width={chartW} height={64} />
           )}
 
           <Box flexDirection="row" gap={1} flexWrap="wrap">
-            <Button key="copy-day" label="复制今天的工作记录" onPress={() => void copyDayLog($, e.surface)} />
+            <Button key="copy-day" label={tr().copyDay} onPress={() => void copyDayLog($, e.surface)} />
           </Box>
 
-          {history.length === 0 && <Text dimColor>还没有记录：每轮结束后会在这里留下一条</Text>}
+          {history.length === 0 && <Text dimColor>{tr().noHistory}</Text>}
 
           {groupByDay(history).map(group => (
             <Box key={`day-${group.label}`} flexDirection="column">
               <Text bold color={CLAY_MUTED}>
-                {group.label} · {group.items.length} 轮
+                {tr().dayTurns(group.label, group.items.length)}
               </Text>
               {group.items.slice(0, 50).map(r => {
                 const isOpen = expanded === r.id
@@ -1036,20 +1037,20 @@ export const register: Register = (on, options) => {
                         </Text>
                         <Text dimColor wrap="wrap">
                           {[
-                            r.project ? `项目 ${r.project}` : null,
-                            r.sessionId === sessionId ? '本会话' : `${dayLabel(r.startedAt)}的会话`,
-                            r.errors ? `${r.errors} 次失败` : null,
+                            r.project ? tr().project(r.project) : null,
+                            r.sessionId === sessionId ? tr().thisSession : tr().otherSession(dayLabel(r.startedAt)),
+                            r.errors ? tr().nFailed(r.errors) : null,
                           ]
                             .filter(Boolean)
                             .join(' · ')}
                         </Text>
                         <Text dimColor wrap="wrap">
-                          {`输入 ${fmtTokens(r.tokens.input)} · 输出 ${fmtTokens(r.tokens.output)} · 缓存读 ${fmtTokens(r.tokens.cacheRead)} · 缓存写 ${fmtTokens(r.tokens.cacheWrite)} · 旁白 ${fmtTokens(r.narratorTokens)}`}
+                          {tr().tokenBreakdown(fmtTokens(r.tokens.input), fmtTokens(r.tokens.output), fmtTokens(r.tokens.cacheRead), fmtTokens(r.tokens.cacheWrite), fmtTokens(r.narratorTokens))}
                         </Text>
                         {r.files.length > 0 && (
                           <Text wrap="wrap">
-                            <Text dimColor>改了 </Text>
-                            {r.files.join('、')}
+                            <Text dimColor>{tr().edited}</Text>
+                            {r.files.join(tr().listSep)}
                           </Text>
                         )}
                       </Box>
